@@ -18,6 +18,8 @@ from jaxmarl.environments.overcooked import overcooked_layouts
 from jaxmarl.viz.overcooked_visualizer import OvercookedVisualizer
 import hydra
 from omegaconf import OmegaConf
+from datetime import datetime
+import os
 
 import matplotlib.pyplot as plt
 
@@ -340,14 +342,18 @@ def main(config):
     config = OmegaConf.to_container(config) 
     config["ENV_KWARGS"]["layout"] = overcooked_layouts[config["ENV_KWARGS"]["layout"]]
     rng = jax.random.PRNGKey(30)
-    num_seeds = 20
+    num_seeds = 1 #20
     with jax.disable_jit(False):
         train_jit = jax.jit(jax.vmap(make_train(config)))
         rngs = jax.random.split(rng, num_seeds)
         out = train_jit(rngs)
     
     print('** Saving Results **')
-    filename = f'{config["ENV_NAME"]}_cramped_room_new'
+    results_dir = "results"
+    os.makedirs(results_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = os.path.join(results_dir, f'{config["ENV_NAME"]}_cramped_room_new_{timestamp}')
+    # filename = f'{config["ENV_NAME"]}_cramped_room_new'
     rewards = out["metrics"]["returned_episode_returns"].mean(-1).reshape((num_seeds, -1))
     reward_mean = rewards.mean(0)  # mean 
     reward_std = rewards.std(0) / np.sqrt(num_seeds)  # standard error
