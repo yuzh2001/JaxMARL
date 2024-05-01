@@ -13,6 +13,7 @@ from flax import struct
 from flax.core.frozen_dict import FrozenDict
 from .layouts import Agent
 from .common import StaticObject, DynamicObject, Direction, Position
+from typing import NamedTuple
 
 from jaxmarl.environments.overcooked.common import (
     OBJECT_TO_INDEX,
@@ -32,20 +33,17 @@ class Actions(IntEnum):
     up = 3
     stay = 4
     interact = 5
-    done = 6
-
-
-@struct.dataclass
-class Cell:
-    static_item: int
-    ingredients: int
-    extra: int
+    # done = 6
 
 
 @struct.dataclass
 class State:
     agents: chex.Array
 
+    # width x height x 3
+    # First channel: static items
+    # Second channel: dynamic items (plates and ingredients)
+    # Third channel: extra info
     grid: chex.Array
 
     time: chex.Array
@@ -62,8 +60,8 @@ class Overcooked(MultiAgentEnv):
 
     def __init__(
         self,
-        layout=FrozenDict(layouts["cramped_room"]),
-        random_reset: bool = False,
+        layout=layouts["counter_circuit"],
+        # random_reset: bool = False,
         max_steps: int = 400,
     ):
         # Sets self.num_agents to 2
@@ -82,18 +80,9 @@ class Overcooked(MultiAgentEnv):
         self.layout = layout
         self.agents = ["agent_0", "agent_1"]
 
-        self.action_set = jnp.array(
-            [
-                Actions.right,
-                Actions.down,
-                Actions.left,
-                Actions.up,
-                Actions.stay,
-                Actions.interact,
-            ]
-        )
+        self.action_set = jnp.array(list(Actions))
 
-        self.random_reset = random_reset
+        # self.random_reset = random_reset
         self.max_steps = max_steps
 
     def step_env(
@@ -116,7 +105,6 @@ class Overcooked(MultiAgentEnv):
         state = state.replace(terminal=done)
 
         obs = self.get_obs(state)
-        # obs = self.get_obs_v2(state)
 
         rewards = {"agent_0": reward, "agent_1": reward}
         dones = {"agent_0": done, "agent_1": done, "__all__": done}
@@ -133,26 +121,22 @@ class Overcooked(MultiAgentEnv):
         self,
         key: chex.PRNGKey,
     ) -> Tuple[Dict[str, chex.Array], State]:
-        """Reset environment state based on `self.random_reset`
-
-        If True, everything is randomized, including agent inventories and positions, pot states and items on counters
-        If False, only resample agent orientations
-
-        In both cases, the environment layout is determined by `self.layout`
-        """
-
-        # Whether to fully randomize the start state
-        random_reset = self.random_reset
         layout = self.layout
 
-        h = self.height
-        w = self.width
-        num_agents = self.num_agents
+        static_objects = layout.static_objects
+        grid = jnp.stack(
+            [
+                static_objects,
+                jnp.zeros_like(static_objects),  # ingredient channel
+                jnp.zeros_like(static_objects),  # extra info channel
+            ],
+            axis=-1,
+        )
 
-        grid = jnp.array(layout["grid"], dtype=jnp.uint32)
+        agents = jax.vmap(Agent.from_position)(layout.agent_positions)
 
         state = State(
-            agents=jnp.array(layout["agents"]),
+            agents=agents,
             grid=grid,
             time=0,
             terminal=False,
@@ -210,15 +194,19 @@ class Overcooked(MultiAgentEnv):
         self,
         key: chex.PRNGKey,
         state: State,
-        action: chex.Array,
+        actions: chex.Array,
     ) -> Tuple[State, float]:
 
+        # Move action:
+        # TODO: handle collisions as previously and prevent swapping
         def _move(agent, action):
 
             return agent.move(action)
 
-        new_agents = jax.vmap(_move)(state.agents, action)
+        blocked_grid = state.grid[..., 0] == OBJECT_TO_INDEX["wall"]
+        new_agents = jax.vmap(_move)(state.agents, actions)
 
+        # Interact action:
         def _interact(carry, agent):
             grid, reward = carry
 
@@ -236,177 +224,27 @@ class Overcooked(MultiAgentEnv):
             return jax.lax.cond(is_interact, _interact, _no_interact, carry, agent)
 
         carry = (state.grid, 0.0)
-        xs = (state.agents, action)
+        xs = jnp.stack((new_agents, actions), axis=1)
         (new_grid, reward), new_agents = jax.lax.scan(_interact_wrapper, carry, xs)
 
-        # TODO: cook pots
-                # new_ingredients |= (pot_is_cooking * (new_extra == 0)) * DynamicObject.COOKED
+        # Cook pots:
+        def _cook(cell):
+            is_pot = cell.static_item == StaticObject.POT
+            is_cooking = is_pot * (cell.extra > 0)
+            new_extra = jax.lax.select(is_cooking, cell.extra - 1, cell.extra)
+            finished_cooking = is_cooking * (new_extra == 0)
+            new_ingredients = cell.ingredients | (
+                finished_cooking * DynamicObject.COOKED
+            )
 
+            return cell.replace(ingredients=new_ingredients, extra=new_extra)
+
+        new_grid = jax.vmap(_cook)(new_grid)
 
         return (
             state.replace(
                 agents=new_agents,
                 grid=new_grid,
-            ),
-            reward,
-        )
-
-        # Update agent position (forward action)
-        is_move_action = jnp.logical_and(
-            action != Actions.stay, action != Actions.interact
-        )
-        is_move_action_transposed = jnp.expand_dims(
-            is_move_action, 0
-        ).transpose()  # Necessary to broadcast correctly
-
-        fwd_pos = jnp.minimum(
-            jnp.maximum(
-                state.agent_pos
-                + is_move_action_transposed * DIR_TO_VEC[jnp.minimum(action, 3)]
-                + ~is_move_action_transposed * state.agent_dir,
-                0,
-            ),
-            jnp.array((self.width - 1, self.height - 1), dtype=jnp.uint32),
-        )
-
-        # Can't go past wall or goal
-        def _wall_or_goal(fwd_position, wall_map, goal_pos):
-            fwd_wall = wall_map.at[fwd_position[1], fwd_position[0]].get()
-            goal_collision = lambda pos, goal: jnp.logical_and(
-                pos[0] == goal[0], pos[1] == goal[1]
-            )
-            fwd_goal = jax.vmap(goal_collision, in_axes=(None, 0))(
-                fwd_position, goal_pos
-            )
-            # fwd_goal = jnp.logical_and(fwd_position[0] == goal_pos[0], fwd_position[1] == goal_pos[1])
-            fwd_goal = jnp.any(fwd_goal)
-            return fwd_wall, fwd_goal
-
-        fwd_pos_has_wall, fwd_pos_has_goal = jax.vmap(
-            _wall_or_goal, in_axes=(0, None, None)
-        )(fwd_pos, state.wall_map, state.goal_pos)
-
-        fwd_pos_blocked = jnp.logical_or(fwd_pos_has_wall, fwd_pos_has_goal).reshape(
-            (self.num_agents, 1)
-        )
-
-        bounced = jnp.logical_or(fwd_pos_blocked, ~is_move_action_transposed)
-
-        # Agents can't overlap
-        # Hardcoded for 2 agents (call them Alice and Bob)
-        agent_pos_prev = jnp.array(state.agent_pos)
-        fwd_pos = (bounced * state.agent_pos + (~bounced) * fwd_pos).astype(jnp.uint32)
-        collision = jnp.all(fwd_pos[0] == fwd_pos[1])
-
-        # No collision = No movement. This matches original Overcooked env.
-        alice_pos = jnp.where(
-            collision,
-            state.agent_pos[0],  # collision and Bob bounced
-            fwd_pos[0],
-        )
-        bob_pos = jnp.where(
-            collision,
-            state.agent_pos[1],  # collision and Alice bounced
-            fwd_pos[1],
-        )
-
-        # Prevent swapping places (i.e. passing through each other)
-        swap_places = jnp.logical_and(
-            jnp.all(fwd_pos[0] == state.agent_pos[1]),
-            jnp.all(fwd_pos[1] == state.agent_pos[0]),
-        )
-        alice_pos = jnp.where(~collision * swap_places, state.agent_pos[0], alice_pos)
-        bob_pos = jnp.where(~collision * swap_places, state.agent_pos[1], bob_pos)
-
-        fwd_pos = fwd_pos.at[0].set(alice_pos)
-        fwd_pos = fwd_pos.at[1].set(bob_pos)
-        agent_pos = fwd_pos.astype(jnp.uint32)
-
-        # Update agent direction
-        agent_dir_idx = ~is_move_action * state.agent_dir_idx + is_move_action * action
-        agent_dir = DIR_TO_VEC[agent_dir_idx]
-
-        # Handle interacts. Agent 1 first, agent 2 second, no collision handling.
-        # This matches the original Overcooked
-        fwd_pos = state.agent_pos + state.agent_dir
-        maze_map = state.maze_map
-        is_interact_action = action == Actions.interact
-
-        # Compute the effect of interact first, then apply it if needed
-        candidate_maze_map, alice_inv, alice_reward = self.process_interact(
-            maze_map, state.wall_map, fwd_pos[0], state.agent_inv[0]
-        )
-        alice_interact = is_interact_action[0]
-        bob_interact = is_interact_action[1]
-
-        maze_map = jax.lax.select(alice_interact, candidate_maze_map, maze_map)
-        alice_inv = jax.lax.select(alice_interact, alice_inv, state.agent_inv[0])
-        alice_reward = jax.lax.select(alice_interact, alice_reward, 0.0)
-
-        candidate_maze_map, bob_inv, bob_reward = self.process_interact(
-            maze_map, state.wall_map, fwd_pos[1], state.agent_inv[1]
-        )
-        maze_map = jax.lax.select(bob_interact, candidate_maze_map, maze_map)
-        bob_inv = jax.lax.select(bob_interact, bob_inv, state.agent_inv[1])
-        bob_reward = jax.lax.select(bob_interact, bob_reward, 0.0)
-
-        agent_inv = jnp.array([alice_inv, bob_inv])
-
-        # Update agent component in maze_map
-        def _get_agent_updates(agent_dir_idx, agent_pos, agent_pos_prev, agent_idx):
-            agent = jnp.array(
-                [
-                    OBJECT_TO_INDEX["agent"],
-                    COLOR_TO_INDEX["red"] + agent_idx * 2,
-                    agent_dir_idx,
-                ],
-                dtype=jnp.uint8,
-            )
-            agent_x_prev, agent_y_prev = agent_pos_prev
-            agent_x, agent_y = agent_pos
-            return agent_x, agent_y, agent_x_prev, agent_y_prev, agent
-
-        vec_update = jax.vmap(_get_agent_updates, in_axes=(0, 0, 0, 0))
-        agent_x, agent_y, agent_x_prev, agent_y_prev, agent_vec = vec_update(
-            agent_dir_idx, agent_pos, agent_pos_prev, jnp.arange(self.num_agents)
-        )
-        empty = jnp.array([OBJECT_TO_INDEX["empty"], 0, 0], dtype=jnp.uint8)
-
-        # Compute padding, added automatically by map maker function
-        height = self.height
-        padding = (state.maze_map.shape[0] - height) // 2
-
-        maze_map = maze_map.at[padding + agent_y_prev, padding + agent_x_prev, :].set(
-            empty
-        )
-        maze_map = maze_map.at[padding + agent_y, padding + agent_x, :].set(agent_vec)
-
-        # Update pot cooking status
-        def _cook_pots(pot):
-            pot_status = pot[-1]
-            is_cooking = jnp.array(pot_status <= POT_FULL_STATUS)
-            not_done = jnp.array(pot_status > POT_READY_STATUS)
-            pot_status = (
-                is_cooking * not_done * (pot_status - 1) + (~is_cooking) * pot_status
-            )  # defaults to zero if done
-            return pot.at[-1].set(pot_status)
-
-        pot_x = state.pot_pos[:, 0]
-        pot_y = state.pot_pos[:, 1]
-        pots = maze_map.at[padding + pot_y, padding + pot_x].get()
-        pots = jax.vmap(_cook_pots, in_axes=0)(pots)
-        maze_map = maze_map.at[padding + pot_y, padding + pot_x, :].set(pots)
-
-        reward = alice_reward + bob_reward
-
-        return (
-            state.replace(
-                agent_pos=agent_pos,
-                agent_dir_idx=agent_dir_idx,
-                agent_dir=agent_dir,
-                agent_inv=agent_inv,
-                maze_map=maze_map,
-                terminal=False,
             ),
             reward,
         )
@@ -468,8 +306,9 @@ class Overcooked(MultiAgentEnv):
             successful_drop * merged_ingredients + no_effect * interact_ingredients
         )
 
-
-        new_extra = jax.lax.select(pot_is_idle * (interact_ingredients != 0), POT_COOK_TIME, interact_extra)
+        new_extra = jax.lax.select(
+            pot_is_idle * (interact_ingredients != 0), POT_COOK_TIME, interact_extra
+        )
         new_cell = Cell(
             static_item=interact_item,
             ingredients=new_ingredients,

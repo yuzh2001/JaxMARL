@@ -2,6 +2,7 @@ import jax.numpy as jnp
 from flax.core.frozen_dict import FrozenDict
 from .common import Direction, Position, StaticItem
 from flax import struct
+from typing import NameTuple
 
 cramped_room = {
     "height": 4,
@@ -93,19 +94,13 @@ WWWOOWWW
 
 
 @struct.dataclass
-class Agent:
-    pos: Position
-    dir: Direction
-    inventory: jnp.ndarray
-
-    def get_fwd_pos(self):
-        return self.pos.move(self.dir)
-
-
-@struct.dataclass
 class Layout:
-    agents: jnp.ndarray
-    grid: jnp.ndarray
+    # List of agent positions
+    agent_positions: jnp.ndarray
+
+    # width x height grid with static items
+    static_objects: jnp.ndarray
+
     num_ingredients: int
 
 
@@ -131,24 +126,24 @@ def layout_grid_to_dict(grid):
     if len(rows[-1]) == 0:
         rows = rows[:-1]
 
-    grid = jnp.zeros((len(rows), len(rows[0])), dtype=jnp.int32)
+    static_objects = jnp.zeros((len(rows), len(rows[0])), dtype=jnp.int32)
 
     char_to_static_item = {
         " ": StaticItem.EMPTY,
         "W": StaticItem.WALL,
-        "A": StaticItem.AGENT,
         "X": StaticItem.GOAL,
         "B": StaticItem.PLATE_PILE,
         "P": StaticItem.POT,
     }
 
-    for i in range(10):
-        char_to_static_item[f"I{i}"] = StaticItem.INGREDIENT_PILE + i
+    for r in range(10):
+        char_to_static_item[f"I{r}"] = StaticItem.INGREDIENT_PILE + r
 
-    agents = []
+    agent_positions = []
 
-    for i, row in enumerate(rows):
+    for r, row in enumerate(rows):
         j = 0
+        c = 0
         while j < len(row):
             char = row[j]
             if char == "I" and j + 1 < len(row) and row[j + 1].isdigit():
@@ -160,17 +155,18 @@ def layout_grid_to_dict(grid):
                 char = "I0"
 
             if char == "A":
-                agent = Agent(pos=Position(x=i, y=j), dir=Direction.NORTH)
-                agents.append(agent)
+                agent_pos = Position(r, j)
+                agent_positions.append(agent_pos)
 
-            grid[i, j] = char_to_static_item.get(char, StaticItem.EMPTY)
+            static_objects[r, c] = char_to_static_item.get(char, StaticItem.EMPTY)
             j += 1
+            c += 1
 
     # TODO: add some sanity checks - e.g. agent must exist, surrounded by walls, etc.
 
     layout = Layout(
-        agents=jnp.array([[agent.pos.x, agent.pos.y, agent.dir] for agent in agents]),
-        grid=grid,
+        agent_positions=jnp.array(agent_positions),
+        static_objects=static_objects,
         num_ingredients=10,
     )
 

@@ -23,6 +23,7 @@ import os
 
 import matplotlib.pyplot as plt
 
+
 class ActorCritic(nn.Module):
     action_dim: Sequence[int]
     activation: str = "tanh"
@@ -59,7 +60,7 @@ class ActorCritic(nn.Module):
         )
 
         return pi, jnp.squeeze(critic, axis=-1)
-    
+
 
 class Transition(NamedTuple):
     done: jnp.ndarray
@@ -69,6 +70,7 @@ class Transition(NamedTuple):
     log_prob: jnp.ndarray
     obs: jnp.ndarray
     info: jnp.ndarray
+
 
 def get_rollout(train_state, config):
     env = jaxmarl.make(config["ENV_NAME"], **config["ENV_KWARGS"])
@@ -99,7 +101,10 @@ def get_rollout(train_state, config):
         pi_0, _ = network.apply(network_params, obs["agent_0"])
         pi_1, _ = network.apply(network_params, obs["agent_1"])
 
-        actions = {"agent_0": pi_0.sample(seed=key_a0), "agent_1": pi_1.sample(seed=key_a1)}
+        actions = {
+            "agent_0": pi_0.sample(seed=key_a0),
+            "agent_1": pi_1.sample(seed=key_a1),
+        }
         # env_act = unbatchify(action, env.agents, config["NUM_ENVS"], env.num_agents)
         # env_act = {k: v.flatten() for k, v in env_act.items()}
 
@@ -111,6 +116,7 @@ def get_rollout(train_state, config):
 
     return state_seq
 
+
 def batchify(x: dict, agent_list, num_actors):
     x = jnp.stack([x[a] for a in agent_list])
     return x.reshape((num_actors, -1))
@@ -120,21 +126,26 @@ def unbatchify(x: jnp.ndarray, agent_list, num_envs, num_actors):
     x = x.reshape((num_actors, num_envs, -1))
     return {a: x[i] for i, a in enumerate(agent_list)}
 
+
 def make_train(config):
     env = jaxmarl.make(config["ENV_NAME"], **config["ENV_KWARGS"])
 
     config["NUM_ACTORS"] = env.num_agents * config["NUM_ENVS"]
     config["NUM_UPDATES"] = (
-        config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"] 
+        config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"]
     )
     config["MINIBATCH_SIZE"] = (
         config["NUM_ACTORS"] * config["NUM_STEPS"] // config["NUM_MINIBATCHES"]
     )
-    
+
     env = LogWrapper(env)
-    
+
     def linear_schedule(count):
-        frac = 1.0 - (count // (config["NUM_MINIBATCHES"] * config["UPDATE_EPOCHS"])) / config["NUM_UPDATES"]
+        frac = (
+            1.0
+            - (count // (config["NUM_MINIBATCHES"] * config["UPDATE_EPOCHS"]))
+            / config["NUM_UPDATES"]
+        )
         return config["LR"] * frac
 
     def train(rng):
@@ -143,9 +154,9 @@ def make_train(config):
         network = ActorCritic(env.action_space().n, activation=config["ACTIVATION"])
         rng, _rng = jax.random.split(rng)
         init_x = jnp.zeros(env.observation_space().shape)
-        
+
         init_x = init_x.flatten()
-        
+
         network_params = network.init(_rng, init_x)
         if config["ANNEAL_LR"]:
             tx = optax.chain(
@@ -153,18 +164,21 @@ def make_train(config):
                 optax.adam(learning_rate=linear_schedule, eps=1e-5),
             )
         else:
-            tx = optax.chain(optax.clip_by_global_norm(config["MAX_GRAD_NORM"]), optax.adam(config["LR"], eps=1e-5))
+            tx = optax.chain(
+                optax.clip_by_global_norm(config["MAX_GRAD_NORM"]),
+                optax.adam(config["LR"], eps=1e-5),
+            )
         train_state = TrainState.create(
             apply_fn=network.apply,
             params=network_params,
             tx=tx,
         )
-        
+
         # INIT ENV
         rng, _rng = jax.random.split(rng)
         reset_rng = jax.random.split(_rng, config["NUM_ENVS"])
         obsv, env_state = jax.vmap(env.reset, in_axes=(0,))(reset_rng)
-        
+
         # TRAIN LOOP
         def _update_step(runner_state, unused):
             # COLLECT TRAJECTORIES
@@ -175,21 +189,23 @@ def make_train(config):
                 rng, _rng = jax.random.split(rng)
 
                 obs_batch = batchify(last_obs, env.agents, config["NUM_ACTORS"])
-                
+
                 pi, value = network.apply(train_state.params, obs_batch)
                 action = pi.sample(seed=_rng)
                 log_prob = pi.log_prob(action)
-                env_act = unbatchify(action, env.agents, config["NUM_ENVS"], env.num_agents)
-                
-                env_act = {k:v.flatten() for k,v in env_act.items()}
-                
+                env_act = unbatchify(
+                    action, env.agents, config["NUM_ENVS"], env.num_agents
+                )
+
+                env_act = {k: v.flatten() for k, v in env_act.items()}
+
                 # STEP ENV
                 rng, _rng = jax.random.split(rng)
                 rng_step = jax.random.split(_rng, config["NUM_ENVS"])
-                
-                obsv, env_state, reward, done, info = jax.vmap(env.step, in_axes=(0,0,0))(
-                    rng_step, env_state, env_act
-                )
+
+                obsv, env_state, reward, done, info = jax.vmap(
+                    env.step, in_axes=(0, 0, 0)
+                )(rng_step, env_state, env_act)
                 info = jax.tree_map(lambda x: x.reshape((config["NUM_ACTORS"])), info)
                 transition = Transition(
                     batchify(done, env.agents, config["NUM_ACTORS"]).squeeze(),
@@ -198,8 +214,7 @@ def make_train(config):
                     batchify(reward, env.agents, config["NUM_ACTORS"]).squeeze(),
                     log_prob,
                     obs_batch,
-                    info
-                    
+                    info,
                 )
                 runner_state = (train_state, env_state, obsv, rng)
                 return runner_state, transition
@@ -207,7 +222,7 @@ def make_train(config):
             runner_state, traj_batch = jax.lax.scan(
                 _env_step, runner_state, None, config["NUM_STEPS"]
             )
-            
+
             # CALCULATE ADVANTAGE
             train_state, env_state, last_obs, rng = runner_state
             last_obs_batch = batchify(last_obs, env.agents, config["NUM_ACTORS"])
@@ -238,7 +253,7 @@ def make_train(config):
                 return advantages, advantages + traj_batch.value
 
             advantages, targets = _calculate_gae(traj_batch, last_val)
-            
+
             # UPDATE NETWORK
             def _update_epoch(update_state, unused):
                 def _update_minbatch(train_state, batch_info):
@@ -322,7 +337,7 @@ def make_train(config):
             train_state = update_state[0]
             metric = traj_batch.info
             rng = update_state[-1]
-            
+
             runner_state = (train_state, env_state, last_obs, rng)
             return runner_state, metric
 
@@ -336,34 +351,44 @@ def make_train(config):
     return train
 
 
-
 @hydra.main(version_base=None, config_path="config", config_name="ippo_ff_overcooked")
 def main(config):
-    config = OmegaConf.to_container(config) 
+    config = OmegaConf.to_container(config)
     config["ENV_KWARGS"]["layout"] = overcooked_layouts[config["ENV_KWARGS"]["layout"]]
     rng = jax.random.PRNGKey(30)
-    num_seeds = 1 #20
+    num_seeds = 1  # 20
     with jax.disable_jit(False):
         train_jit = jax.jit(jax.vmap(make_train(config)))
         rngs = jax.random.split(rng, num_seeds)
         out = train_jit(rngs)
-    
-    print('** Saving Results **')
+
+    print("** Saving Results **")
     results_dir = "results"
     os.makedirs(results_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    filename = os.path.join(results_dir, f'{config["ENV_NAME"]}_cramped_room_new_{timestamp}')
+    filename = os.path.join(
+        results_dir, f'{config["ENV_NAME"]}_cramped_room_new_{timestamp}'
+    )
     # filename = f'{config["ENV_NAME"]}_cramped_room_new'
-    rewards = out["metrics"]["returned_episode_returns"].mean(-1).reshape((num_seeds, -1))
-    reward_mean = rewards.mean(0)  # mean 
+    rewards = (
+        out["metrics"]["returned_episode_returns"].mean(-1).reshape((num_seeds, -1))
+    )
+    reward_mean = rewards.mean(0)  # mean
     reward_std = rewards.std(0) / np.sqrt(num_seeds)  # standard error
-    
+
     plt.plot(reward_mean)
-    plt.fill_between(range(len(reward_mean)), reward_mean - reward_std, reward_mean + reward_std, alpha=0.2)
+    plt.fill_between(
+        range(len(reward_mean)),
+        reward_mean - reward_std,
+        reward_mean + reward_std,
+        alpha=0.2,
+    )
     # compute standard error
     plt.xlabel("Update Step")
     plt.ylabel("Return")
-    plt.savefig(f'{filename}.png')
+    plt.savefig(f"{filename}.png")
+
+    print("Final reward mean: ", reward_mean[-1])
 
     # animate first seed
     train_state = jax.tree_map(lambda x: x[0], out["runner_state"][0])
@@ -371,6 +396,7 @@ def main(config):
     viz = OvercookedVisualizer()
     # agent_view_size is hardcoded as it determines the padding around the layout.
     viz.animate(state_seq, agent_view_size=5, filename=f"{filename}.gif")
+
 
 if __name__ == "__main__":
     main()
