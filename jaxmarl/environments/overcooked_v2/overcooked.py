@@ -11,18 +11,17 @@ from typing import Tuple, Dict
 import chex
 from flax import struct
 from flax.core.frozen_dict import FrozenDict
-from .layouts import Agent
-from .common import StaticObject, DynamicObject, Direction, Position
+from jaxmarl.environments.overcooked_v2.common import (
+    StaticObject,
+    DynamicObject,
+    Direction,
+    Position,
+    Agent,
+)
 from typing import NamedTuple
 
-from jaxmarl.environments.overcooked.common import (
-    OBJECT_TO_INDEX,
-    COLOR_TO_INDEX,
-    OBJECT_INDEX_TO_VEC,
-    DIR_TO_VEC,
-    make_overcooked_map,
-)
-from jaxmarl.environments.overcooked.layouts import overcooked_layouts as layouts
+
+from jaxmarl.environments.overcooked_v2.layouts import overcooked_layouts as layouts
 
 
 class Actions(IntEnum):
@@ -37,7 +36,21 @@ class Actions(IntEnum):
 
 
 @struct.dataclass
+class Cell:
+    static_item: jnp.ndarray
+    ingredients: jnp.ndarray
+    extra: jnp.ndarray
+
+
+@struct.dataclass
 class State:
+    # # Agent positions: num_agents x 2 (x, y)
+    # agent_positions: chex.Array
+    # # Agent directions: num_agents
+    # agent_directions: chex.Array
+    # # Agent inventories: num_agents
+    # agent_inventories: chex.Array
+
     agents: chex.Array
 
     # width x height x 3
@@ -69,8 +82,8 @@ class Overcooked(MultiAgentEnv):
 
         # self.obs_shape = (agent_view_size, agent_view_size, 3)
         # Observations given by 26 channels, most of which are boolean masks
-        self.height = layout["height"]
-        self.width = layout["width"]
+        self.height = layout.height
+        self.width = layout.width
         # self.obs_shape = (420,)
         self.obs_shape = (self.width, self.height, 3)
 
@@ -124,18 +137,36 @@ class Overcooked(MultiAgentEnv):
         layout = self.layout
 
         static_objects = layout.static_objects
-        grid = jnp.stack(
-            [
-                static_objects,
-                jnp.zeros_like(static_objects),  # ingredient channel
-                jnp.zeros_like(static_objects),  # extra info channel
-            ],
-            axis=-1,
+        # grid = jnp.stack(
+        #     [
+        #         static_objects,
+        #         jnp.zeros_like(static_objects),  # ingredient channel
+        #         jnp.zeros_like(static_objects),  # extra info channel
+        #     ],
+        #     axis=-1,
+        # )
+        grid = Cell(
+            static_item=static_objects,
+            ingredients=jnp.zeros_like(static_objects),
+            extra=jnp.zeros_like(static_objects),
         )
 
-        agents = jax.vmap(Agent.from_position)(layout.agent_positions)
+        num_agents = self.num_agents
+        positions = layout.agent_positions
+        agents = Agent(
+            pos=Position(x=jnp.array(positions[:, 0]), y=jnp.array(positions[:, 1])),
+            dir=jnp.full((num_agents,), Direction.UP),
+            inventory=jnp.zeros((num_agents,), dtype=jnp.uint32),
+        )
+
+        # agent_positions = jnp.array(layout.agent_positions)
+        # agent_directions = jnp.full((self.num_agents,), Direction.NORTH)
+        # agent_inventories = jnp.zeros((self.num_agents,), dtype=jnp.uint32)
 
         state = State(
+            # agent_positions=agent_positions,
+            # agent_directions=agent_directions,
+            # agent_inventories=agent_inventories,
             agents=agents,
             grid=grid,
             time=0,
@@ -146,7 +177,7 @@ class Overcooked(MultiAgentEnv):
 
         return lax.stop_gradient(obs), lax.stop_gradient(state)
 
-    def get_obs_v2(self, state: State) -> Dict[str, chex.Array]:
+    def get_obs(self, state: State) -> Dict[str, chex.Array]:
         """
         Return a full observation, of size (height x width x 3)
 
@@ -155,40 +186,28 @@ class Overcooked(MultiAgentEnv):
         Third channel contains agent positions and orientations
         """
 
-        width = self.width
-        height = self.height
-        padding = (state.maze_map.shape[0] - height) // 2
+        agents = state.agents
+        obs = state.grid
 
-        maze_map = state.maze_map[padding:-padding, padding:-padding, 0]
-
-        def _item_mapping(item):
-            is_wall = jnp.array(item == OBJECT_TO_INDEX["wall"])
-            is_pot = jnp.array(item == OBJECT_TO_INDEX["pot"])
-            is_goal = jnp.array(item == OBJECT_TO_INDEX["goal"])
-            is_agent = jnp.array(item == OBJECT_TO_INDEX["agent"])
-            is_plate_pile = jnp.array(item == OBJECT_TO_INDEX["plate_pile"])
-            is_onion_pile = jnp.array(item == OBJECT_TO_INDEX["onion_pile"])
-
-            static_item = 0
-            dynamic_item = 0
-            info_item = 0
-
-            return jnp.array(
-                [
-                    static_item,
-                    dynamic_item,
-                    info_item,
-                ]
+        def _include_agents(grid, agent):
+            pos = agent.pos
+            inventory = agent.inventory
+            direction = agent.dir
+            return (
+                grid.at[pos.y, pos.x].set([StaticObject.AGENT, inventory, direction]),
+                None,
             )
 
-        obs = jax.lax.map(_item_mapping, maze_map)
+        obs, _ = jax.lax.scan(_include_agents, obs, agents)
 
-        def _agent_obs(agent_idx):
-            agent_pos = state.agent_pos[agent_idx]
-            return obs.at[agent_pos[1], agent_pos[0], 2].set(1)
+        def _agent_obs(agent):
+            pos = agent.pos
+            return obs.at[pos.y, pos.x, 0].set(StaticObject.SELF_AGENT)
 
-        obs_all = {f"agent_{i}": _agent_obs(i) for i in range(self.num_agents)}
-        return obs_all
+        all_obs = jax.vmap(_agent_obs)(agents)
+
+        obs_dict = {f"agent_{i}": obs for i, obs in enumerate(all_obs)}
+        return obs_dict
 
     def step_agents(
         self,
@@ -196,15 +215,53 @@ class Overcooked(MultiAgentEnv):
         state: State,
         actions: chex.Array,
     ) -> Tuple[State, float]:
+        grid = state.grid
 
         # Move action:
+        # 1. move agent to new position (if possible on the grid)
+        # 2. resolve collisions
+        # 3. prevent swapping
         # TODO: handle collisions as previously and prevent swapping
-        def _move(agent, action):
+        def _move_agent(agent, action):
+            def _stay(pos):
+                return pos
 
-            return agent.move(action)
+            ACTION_TO_DIRECTION = {
+                Actions.right: Direction.RIGHT,
+                Actions.down: Direction.DOWN,
+                Actions.left: Direction.LEFT,
+                Actions.up: Direction.UP,
+            }
+            direction = ACTION_TO_DIRECTION.get(action, -1)
 
-        blocked_grid = state.grid[..., 0] == OBJECT_TO_INDEX["wall"]
-        new_agents = jax.vmap(_move)(state.agents, actions)
+            pos = agent.pos
+            new_pos = jax.lax.cond(
+                direction != -1,
+                Position.move_in_bounds(self.width, self.height),
+                _stay,
+                pos,
+                direction,
+            )
+            new_pos = jax.lax.select(
+                grid[new_pos.y, new_pos.x, 0] == StaticObject.EMPTY, new_pos, pos
+            )
+
+        new_agents = jax.vmap(_move_agent)(state.agents, actions)
+
+        # def _resolve_collisions(carry, agent):
+        #     grid, new_agents = carry
+
+        #     pos = agent.pos
+        #     cell = grid[pos.y, pos.x]
+
+        #     is_wall = cell.static_item == StaticObject.WALL
+        #     is_agent = cell.static_item == StaticObject.AGENT
+
+        #     new_pos = jax.lax.cond(
+        #         is_wall | is_agent, lambda _: agent.pos, lambda _: agent, None
+        #     )
+
+        #     return grid.at[pos.y, pos.x].set(cell), new_agents.at[agent]
 
         # Interact action:
         def _interact(carry, agent):
@@ -223,7 +280,7 @@ class Overcooked(MultiAgentEnv):
             is_interact = action == Actions.interact
             return jax.lax.cond(is_interact, _interact, _no_interact, carry, agent)
 
-        carry = (state.grid, 0.0)
+        carry = (grid, 0.0)
         xs = jnp.stack((new_agents, actions), axis=1)
         (new_grid, reward), new_agents = jax.lax.scan(_interact_wrapper, carry, xs)
 

@@ -11,10 +11,14 @@ from typing import NamedTuple
 class StaticObject(IntEnum):
     EMPTY = 0
     WALL = 1
+
+    # Agents are only included in the observation grid
     AGENT = 2
-    GOAL = 3
-    POT = 4
-    PLATE_PILE = 5
+    SELF_AGENT = 3
+
+    GOAL = 4
+    POT = 5
+    PLATE_PILE = 6
     INGREDIENT_PILE = 10
 
 
@@ -28,39 +32,60 @@ class DynamicObject(IntEnum):
 
 
 class Direction(IntEnum):
-    NORTH = 0
-    SOUTH = 1
-    EAST = 2
-    WEST = 3
+    UP = 0
+    DOWN = 1
+    RIGHT = 2
+    LEFT = 3
 
 
-class Position(NamedTuple):
-    x: int
-    y: int
+DIR_TO_VEC = jnp.array(
+    [
+        (0, -1),
+        (0, 1),
+        (1, 0),
+        (-1, 0),
+    ],
+    dtype=jnp.int8,
+)
+
+
+@struct.dataclass
+class Position:
+    x: jnp.ndarray
+    y: jnp.ndarray
+
+    @staticmethod
+    def from_tuple(t):
+        x, y = t
+        return Position(jnp.array([x]), jnp.array([y]))
 
     def move(self, direction):
-        if direction == Direction.NORTH:
-            return Position(self.x, self.y - 1)
-        if direction == Direction.SOUTH:
-            return Position(self.x, self.y + 1)
-        if direction == Direction.EAST:
-            return Position(self.x + 1, self.y)
-        if direction == Direction.WEST:
-            return Position(self.x - 1, self.y)
-        raise ValueError(f"Invalid direction {direction}")
+        vec = DIR_TO_VEC[direction]
+        return Position(self.x + vec[0], self.y + vec[1])
+
+    @staticmethod
+    def move_in_bounds(width, height):
+        def _move(pos, direction):
+            new_pos = pos.move(direction)
+            new_pos.x = jnp.clip(new_pos.x, 0, width - 1)
+            new_pos.y = jnp.clip(new_pos.y, 0, height - 1)
+            return new_pos
+
+        return _move
 
 
-class Agent(NamedTuple):
+@struct.dataclass
+class Agent:
     pos: Position
-    dir: Direction
-    inventory: int
+    dir: jnp.ndarray
+    inventory: jnp.ndarray
 
     def get_fwd_pos(self):
         return self.pos.move(self.dir)
-    
+
     @staticmethod
     def from_position(pos):
-        return Agent(pos, Direction.NORTH, 0)
+        return Agent(pos, jnp.array([Direction.UP]), jnp.zeros((1,)))
 
 
 # class OvercookedState(struct.PyTreeNode):

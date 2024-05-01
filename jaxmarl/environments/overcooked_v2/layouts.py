@@ -1,89 +1,8 @@
-import jax.numpy as jnp
 from flax.core.frozen_dict import FrozenDict
-from .common import Direction, Position, StaticItem
+from jaxmarl.environments.overcooked_v2.common import Direction, Position, StaticObject
 from flax import struct
-from typing import NameTuple
+import numpy as np
 
-cramped_room = {
-    "height": 4,
-    "width": 5,
-    "wall_idx": jnp.array([0, 1, 2, 3, 4, 5, 9, 10, 14, 15, 16, 17, 18, 19]),
-    "agent_idx": jnp.array([6, 8]),
-    "goal_idx": jnp.array([18]),
-    "plate_pile_idx": jnp.array([16]),
-    "onion_pile_idx": jnp.array([5, 9]),
-    "pot_idx": jnp.array([2]),
-}
-asymm_advantages = {
-    "height": 5,
-    "width": 9,
-    "wall_idx": jnp.array(
-        [
-            0,
-            1,
-            2,
-            3,
-            4,
-            5,
-            6,
-            7,
-            8,
-            9,
-            11,
-            12,
-            13,
-            14,
-            15,
-            17,
-            18,
-            22,
-            26,
-            27,
-            31,
-            35,
-            36,
-            37,
-            38,
-            39,
-            40,
-            41,
-            42,
-            43,
-            44,
-        ]
-    ),
-    "agent_idx": jnp.array([29, 32]),
-    "goal_idx": jnp.array([12, 17]),
-    "plate_pile_idx": jnp.array([39, 41]),
-    "onion_pile_idx": jnp.array([9, 14]),
-    "pot_idx": jnp.array([22, 31]),
-}
-coord_ring = {
-    "height": 5,
-    "width": 5,
-    "wall_idx": jnp.array(
-        [0, 1, 2, 3, 4, 5, 9, 10, 12, 14, 15, 19, 20, 21, 22, 23, 24]
-    ),
-    "agent_idx": jnp.array([7, 11]),
-    "goal_idx": jnp.array([22]),
-    "plate_pile_idx": jnp.array([10]),
-    "onion_pile_idx": jnp.array([15, 21]),
-    "pot_idx": jnp.array([3, 9]),
-}
-forced_coord = {
-    "height": 5,
-    "width": 5,
-    "wall_idx": jnp.array(
-        [0, 1, 2, 3, 4, 5, 7, 9, 10, 12, 14, 15, 17, 19, 20, 21, 22, 23, 24]
-    ),
-    "agent_idx": jnp.array([11, 8]),
-    "goal_idx": jnp.array([23]),
-    "onion_pile_idx": jnp.array([5, 10]),
-    "plate_pile_idx": jnp.array([15]),
-    "pot_idx": jnp.array([3, 9]),
-}
-
-# Example of layout provided as a grid
 counter_circuit_grid = """
 WWWPPWWW
 W A    W
@@ -95,11 +14,13 @@ WWWOOWWW
 
 @struct.dataclass
 class Layout:
-    # List of agent positions
-    agent_positions: jnp.ndarray
+    # agent positions list of positions num_agents x 2 (x, y)
+    agent_positions: np.ndarray
 
     # width x height grid with static items
-    static_objects: jnp.ndarray
+    static_objects: np.ndarray
+    width: int
+    height: int
 
     num_ingredients: int
 
@@ -126,21 +47,22 @@ def layout_grid_to_dict(grid):
     if len(rows[-1]) == 0:
         rows = rows[:-1]
 
-    static_objects = jnp.zeros((len(rows), len(rows[0])), dtype=jnp.int32)
+    static_objects = np.zeros((len(rows), len(rows[0])), dtype=np.int32)
 
     char_to_static_item = {
-        " ": StaticItem.EMPTY,
-        "W": StaticItem.WALL,
-        "X": StaticItem.GOAL,
-        "B": StaticItem.PLATE_PILE,
-        "P": StaticItem.POT,
+        " ": StaticObject.EMPTY,
+        "W": StaticObject.WALL,
+        "X": StaticObject.GOAL,
+        "B": StaticObject.PLATE_PILE,
+        "P": StaticObject.POT,
     }
 
     for r in range(10):
-        char_to_static_item[f"I{r}"] = StaticItem.INGREDIENT_PILE + r
+        char_to_static_item[f"I{r}"] = StaticObject.INGREDIENT_PILE + r
 
     agent_positions = []
 
+    max_width = 0
     for r, row in enumerate(rows):
         j = 0
         c = 0
@@ -155,18 +77,21 @@ def layout_grid_to_dict(grid):
                 char = "I0"
 
             if char == "A":
-                agent_pos = Position(r, j)
+                agent_pos = [c, r]
                 agent_positions.append(agent_pos)
 
-            static_objects[r, c] = char_to_static_item.get(char, StaticItem.EMPTY)
+            static_objects[r, c] = char_to_static_item.get(char, StaticObject.EMPTY)
             j += 1
             c += 1
+        max_width = max(max_width, c)
 
     # TODO: add some sanity checks - e.g. agent must exist, surrounded by walls, etc.
 
     layout = Layout(
-        agent_positions=jnp.array(agent_positions),
-        static_objects=static_objects,
+        agent_positions=np.array(agent_positions),
+        static_objects=static_objects[:, :max_width],
+        width=max_width,
+        height=len(rows),
         num_ingredients=10,
     )
 
@@ -174,9 +99,9 @@ def layout_grid_to_dict(grid):
 
 
 overcooked_layouts = {
-    "cramped_room": FrozenDict(cramped_room),
-    "asymm_advantages": FrozenDict(asymm_advantages),
-    "coord_ring": FrozenDict(coord_ring),
-    "forced_coord": FrozenDict(forced_coord),
+    # "cramped_room": FrozenDict(cramped_room),
+    # "asymm_advantages": FrozenDict(asymm_advantages),
+    # "coord_ring": FrozenDict(coord_ring),
+    # "forced_coord": FrozenDict(forced_coord),
     "counter_circuit": layout_grid_to_dict(counter_circuit_grid),
 }

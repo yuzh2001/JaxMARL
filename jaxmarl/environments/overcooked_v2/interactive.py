@@ -7,8 +7,8 @@ import numpy as np
 
 # from jaxmarl.gridworld.maze import Maze #, Actions
 # from jaxmarl.gridworld.ma_maze import MAMaze
-from jaxmarl.environments.overcooked.overcooked import Overcooked
-from jaxmarl.environments.overcooked.layouts import overcooked_layouts as layouts
+from jaxmarl.environments.overcooked_v2.overcooked import Overcooked
+from jaxmarl.environments.overcooked_v2.layouts import overcooked_layouts as layouts
 
 
 def redraw(state, obs, extras):
@@ -178,7 +178,7 @@ if __name__ == "__main__":
 
     if len(args.layout) > 0:
         layout = layouts[args.layout]
-        env = Overcooked(layout=layout, random_reset=args.random_reset)
+        env = Overcooked(layout=layout)
     else:
         print("You must provide a layout.")
 
