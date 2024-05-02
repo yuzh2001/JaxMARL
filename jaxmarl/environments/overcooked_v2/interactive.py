@@ -124,7 +124,7 @@ def key_handler(env, extras, event):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--layout", type=str, help="Overcooked layout", default="counter_circuit"
+        "--layout", type=str, help="Overcooked layout", default="cramped_room"
     )
     # parser.add_argument(
     #     '--random_reset',
@@ -167,7 +167,7 @@ if __name__ == "__main__":
     #     obs_viz = OvercookedV2Visualizer()
     #     obs_viz2 = OvercookedV2Visualizer()
 
-    with jax.disable_jit(False):
+    with jax.disable_jit(True):
         jit_reset = jax.jit(env.reset)
         # jit_reset = env.reset_env
         key = jax.random.PRNGKey(args.seed)

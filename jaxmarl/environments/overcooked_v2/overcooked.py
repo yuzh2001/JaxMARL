@@ -205,7 +205,6 @@ class Overcooked(MultiAgentEnv):
         # 1. move agent to new position (if possible on the grid)
         # 2. resolve collisions
         # 3. prevent swapping
-        # TODO: handle collisions as previously and prevent swapping
         def _move_wrapper(agent, action):
             direction = ACTION_TO_DIRECTION[action]
 
@@ -228,22 +227,36 @@ class Overcooked(MultiAgentEnv):
             )
 
         new_agents = jax.vmap(_move_wrapper)(state.agents, actions)
-        print("new_agents: ", new_agents)
 
-        # def _resolve_collisions(carry, agent):
-        #     grid, new_agents = carry
+        # Resolve collisions:
+        def _resolved_positions(mask):
+            return tree_select(mask, state.agents.pos, new_agents.pos)
 
-        #     pos = agent.pos
-        #     cell = grid[pos.y, pos.x]
+        def _get_collisions(mask):
+            positions = _resolved_positions(mask)
 
-        #     is_wall = cell.static_item == StaticObject.WALL
-        #     is_agent = cell.static_item == StaticObject.AGENT
+            collision_grid = jnp.zeros((self.height, self.width))
+            collision_grid, _ = jax.lax.scan(
+                lambda grid, pos: (grid.at[pos.y, pos.x].add(1), None),
+                collision_grid,
+                positions,
+            )
 
-        #     new_pos = jax.lax.cond(
-        #         is_wall | is_agent, lambda _: agent.pos, lambda _: agent, None
-        #     )
+            collision_mask = collision_grid > 1
 
-        #     return grid.at[pos.y, pos.x].set(cell), new_agents.at[agent]
+            collisions = jax.vmap(lambda p: collision_mask[p.y, p.x])(positions)
+            return collisions
+
+        initial_mask = jnp.zeros((self.num_agents,), dtype=bool)
+        mask = jax.lax.while_loop(
+            lambda mask: jnp.any(_get_collisions(mask)),
+            lambda mask: mask | _get_collisions(mask),
+            initial_mask,
+        )
+        new_agents = new_agents.replace(pos=_resolved_positions(mask))
+
+        # Prevent swapping:
+        # TODO: implement this
 
         # Interact action:
         def _interact_wrapper(carry, x):
@@ -396,7 +409,7 @@ class Overcooked(MultiAgentEnv):
     @property
     def name(self) -> str:
         """Environment name."""
-        return "Overcooked"
+        return "Overcooked V2"
 
     @property
     def num_actions(self) -> int:
