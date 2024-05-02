@@ -10,6 +10,13 @@ W   W
 WBWXW
 """
 
+cramped_room_v2 = """
+WWPWW
+I0A AI1
+W   W
+WBWXW
+"""
+
 # asymm_advantages = """
 # WWWWWWWWW
 # WO PXPBW W
@@ -90,7 +97,7 @@ def layout_grid_to_dict(grid):
     }
 
     for r in range(10):
-        char_to_static_item[f"I{r}"] = StaticObject.INGREDIENT_PILE + r
+        char_to_static_item[f"I{r}"] = StaticObject.INGREDIENT_PILE_BASE + r
 
     agent_positions = []
 
@@ -132,6 +139,7 @@ def layout_grid_to_dict(grid):
 
 overcooked_layouts = {
     "cramped_room": layout_grid_to_dict(cramped_room),
+    "cramped_room_v2": layout_grid_to_dict(cramped_room_v2),
     # "asymm_advantages": layout_grid_to_dict(asymm_advantages),
     # "coord_ring": layout_grid_to_dict(coord_ring),
     # "forced_coord": layout_grid_to_dict(forced_coord),

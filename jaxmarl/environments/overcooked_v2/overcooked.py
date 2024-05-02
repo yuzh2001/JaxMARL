@@ -18,7 +18,6 @@ from jaxmarl.environments.overcooked_v2.common import (
     Position,
     Agent,
 )
-from typing import NamedTuple
 
 
 from jaxmarl.environments.overcooked_v2.layouts import overcooked_layouts as layouts
@@ -283,8 +282,6 @@ class Overcooked(MultiAgentEnv):
         xs = (new_agents, actions)
         (new_grid, reward), new_agents = jax.lax.scan(_interact_wrapper, carry, xs)
 
-        print(new_grid.shape)
-
         # Cook pots:
         def _cook_wrapper(cell):
             is_pot = cell[0] == StaticObject.POT
@@ -300,7 +297,6 @@ class Overcooked(MultiAgentEnv):
             return jax.lax.cond(is_pot, _cook, lambda x: x, cell)
 
         new_grid = jax.vmap(jax.vmap(_cook_wrapper))(new_grid)
-        print(new_grid.shape)
 
         return (
             state.replace(
@@ -329,7 +325,7 @@ class Overcooked(MultiAgentEnv):
         # Booleans depending on what the object is
         object_is_plate_pile = jnp.array(interact_item == StaticObject.PLATE_PILE)
         object_is_ingredient_pile = jnp.array(
-            interact_item >= StaticObject.INGREDIENT_PILE
+            StaticObject.is_ingredient_pile(interact_item)
         )
         object_is_pile = object_is_plate_pile | object_is_ingredient_pile
         object_is_pot = jnp.array(interact_item == StaticObject.POT)
@@ -359,20 +355,21 @@ class Overcooked(MultiAgentEnv):
         print("object_is_pile: ", object_is_pile)
         print("inventory_is_empty: ", inventory_is_empty)
 
+        pot_full = DynamicObject.ingredient_count(interact_ingredients) == 3
+
         successful_drop = (
             object_is_wall * object_has_no_ingredients * ~inventory_is_empty
-            + pot_is_idle * inventory_is_ingredient
+            + pot_is_idle * inventory_is_ingredient * ~pot_full
         )
         successful_delivery = object_is_goal * inventory_is_dish
         no_effect = ~successful_pickup * ~successful_drop * ~successful_delivery
 
-        # TODO: watch out for duplicate ingredients and overflows
-        merged_ingredients = interact_ingredients | inventory
+        merged_ingredients = interact_ingredients + inventory
         print("merged_ingredients: ", merged_ingredients)
+
         pile_ingredient = (
             object_is_plate_pile * DynamicObject.PLATE
-            + object_is_ingredient_pile
-            * DynamicObject.INGREDIENT  # TODO: higher ingredients
+            + object_is_ingredient_pile * StaticObject.get_ingredient(interact_item)
         )
 
         new_ingredients = (
@@ -380,7 +377,9 @@ class Overcooked(MultiAgentEnv):
         )
 
         new_extra = jax.lax.select(
-            pot_is_idle * (interact_ingredients != 0), POT_COOK_TIME, interact_extra
+            pot_is_idle * ~object_has_no_ingredients * inventory_is_empty,
+            POT_COOK_TIME,
+            interact_extra,
         )
         new_cell = jnp.array([interact_item, new_ingredients, new_extra])
 

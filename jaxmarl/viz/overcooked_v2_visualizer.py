@@ -25,7 +25,23 @@ COLORS = {
     "white": np.array([255, 255, 255]),
     "black": np.array([25, 25, 25]),
     "orange": np.array([230, 180, 0]),
+    "pink": np.array([255, 105, 180]),
+    "brown": np.array([139, 69, 19]),
+    "cyan": np.array([0, 255, 255]),
+    "light_blue": np.array([173, 216, 230]),
 }
+
+INGREDIENT_COLORS = [
+    COLORS["yellow"],
+    COLORS["purple"],
+    COLORS["blue"],
+    COLORS["orange"],
+    COLORS["red"],
+    COLORS["pink"],
+    COLORS["brown"],
+    COLORS["cyan"],
+    COLORS["light_blue"],
+]
 
 
 class OvercookedV2Visualizer:
@@ -188,11 +204,15 @@ class OvercookedV2Visualizer:
                     for plate_fn in plate_fns
                 ]
 
-            case StaticObject.INGREDIENT_PILE:
+            case (
+                ingredient_pile
+            ) if ingredient_pile >= StaticObject.INGREDIENT_PILE_BASE:
+                ingredient_idx = ingredient_pile - StaticObject.INGREDIENT_PILE_BASE
+
                 rendering.fill_coords(
                     img, rendering.point_in_rect(0, 1, 0, 1), COLORS["grey"]
                 )
-                onion_fns = [
+                ingredient_fns = [
                     rendering.point_in_circle(*coord, 0.15)
                     for coord in [
                         (0.5, 0.15),
@@ -203,8 +223,10 @@ class OvercookedV2Visualizer:
                     ]
                 ]
                 [
-                    rendering.fill_coords(img, onion_fn, COLORS["yellow"])
-                    for onion_fn in onion_fns
+                    rendering.fill_coords(
+                        img, ingredient_fn, INGREDIENT_COLORS[ingredient_idx]
+                    )
+                    for ingredient_fn in ingredient_fns
                 ]
 
             case _:

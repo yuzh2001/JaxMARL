@@ -19,7 +19,17 @@ class StaticObject(IntEnum):
     GOAL = 4
     POT = 5
     PLATE_PILE = 6
-    INGREDIENT_PILE = 10
+
+    INGREDIENT_PILE_BASE = 10
+
+    @staticmethod
+    def is_ingredient_pile(obj):
+        return obj >= StaticObject.INGREDIENT_PILE_BASE
+
+    @staticmethod
+    def get_ingredient(obj):
+        idx = obj - StaticObject.INGREDIENT_PILE_BASE
+        return DynamicObject.ingredient(idx)
 
 
 class DynamicObject(IntEnum):
@@ -27,8 +37,28 @@ class DynamicObject(IntEnum):
     PLATE = 1 << 0
     COOKED = 1 << 1
 
-    # every ingredient has a unique bit
-    INGREDIENT = 1 << 2
+    # every ingredient has two unique bit
+    BASE_INGREDIENT = 1 << 2
+
+    @staticmethod
+    def ingredient(idx):
+        return DynamicObject.BASE_INGREDIENT << 2 * idx
+
+    @staticmethod
+    def is_ingredient(obj):
+        return (obj != DynamicObject.EMPTY) and (obj & DynamicObject.PLATE) == 0
+
+    @staticmethod
+    def ingredient_count(obj):
+        initial_val = (obj >> 2, 0)
+
+        def _count_ingredients(obj, count):
+            return obj >> 2, count + (obj & 0x3)
+
+        _, count = jax.lax.while_loop(
+            lambda obj, _: obj > 0, _count_ingredients, initial_val
+        )
+        return count
 
 
 class Direction(IntEnum):
