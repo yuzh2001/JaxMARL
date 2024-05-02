@@ -49,7 +49,7 @@ DIR_TO_VEC = jnp.array(
 )
 
 
-@struct.dataclass
+@chex.dataclass
 class Position:
     x: jnp.ndarray
     y: jnp.ndarray
@@ -61,20 +61,16 @@ class Position:
 
     def move(self, direction):
         vec = DIR_TO_VEC[direction]
-        return Position(self.x + vec[0], self.y + vec[1])
+        return Position(x=self.x + vec[0], y=self.y + vec[1])
 
-    @staticmethod
-    def move_in_bounds(width, height):
-        def _move(pos, direction):
-            new_pos = pos.move(direction)
-            new_pos.x = jnp.clip(new_pos.x, 0, width - 1)
-            new_pos.y = jnp.clip(new_pos.y, 0, height - 1)
-            return new_pos
-
-        return _move
+    def move_in_bounds(self, direction, width, height):
+        new_pos = self.move(direction)
+        clipped_x = jnp.clip(new_pos.x, 0, width - 1)
+        clipped_y = jnp.clip(new_pos.y, 0, height - 1)
+        return Position(x=clipped_x, y=clipped_y)
 
 
-@struct.dataclass
+@chex.dataclass
 class Agent:
     pos: Position
     dir: jnp.ndarray
