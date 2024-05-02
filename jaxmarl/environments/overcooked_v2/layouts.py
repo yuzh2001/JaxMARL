@@ -2,6 +2,7 @@ from flax.core.frozen_dict import FrozenDict
 from jaxmarl.environments.overcooked_v2.common import Direction, Position, StaticObject
 from flax import struct
 import numpy as np
+import jax.numpy as jnp
 
 cramped_room = """
 WWPWW
@@ -17,29 +18,29 @@ W   R
 WBWXW
 """
 
-# asymm_advantages = """
-# WWWWWWWWW
-# WO PXPBW W
-#    P    P
-#     P    P
-# WWWWBWWWW
-# """
+asymm_advantages = """
+WWWWWWWWW
+O WXWOW X
+W   P   W
+W A PA  W
+WWWBWBWWW
+"""
 
-# coord_ring = """
-# WWWWW
-# WB  W
-# O P W
-# O   W
-# WWXWW
-# """
+coord_ring = """
+WWWPW
+W A P
+BAW W
+O   W
+WOXWW
+"""
 
-# forced_coord = """
-# WWWWW
-# WOAWW
-# O P W
-# B P W
-# WWWXW
-# """
+forced_coord = """
+WWWPW
+O WAP
+OAW W
+B W W
+WWWXW
+"""
 
 counter_circuit_grid = """
 WWWPPWWW
@@ -128,7 +129,7 @@ def layout_grid_to_dict(grid):
     # TODO: add some sanity checks - e.g. agent must exist, surrounded by walls, etc.
 
     layout = Layout(
-        agent_positions=np.array(agent_positions),
+        agent_positions=jnp.array(agent_positions),
         static_objects=static_objects[:, :max_width],
         width=max_width,
         height=len(rows),
@@ -141,8 +142,8 @@ def layout_grid_to_dict(grid):
 overcooked_layouts = {
     "cramped_room": layout_grid_to_dict(cramped_room),
     "cramped_room_v2": layout_grid_to_dict(cramped_room_v2),
-    # "asymm_advantages": layout_grid_to_dict(asymm_advantages),
-    # "coord_ring": layout_grid_to_dict(coord_ring),
-    # "forced_coord": layout_grid_to_dict(forced_coord),
+    "asymm_advantages": layout_grid_to_dict(asymm_advantages),
+    "coord_ring": layout_grid_to_dict(coord_ring),
+    "forced_coord": layout_grid_to_dict(forced_coord),
     "counter_circuit": layout_grid_to_dict(counter_circuit_grid),
 }
