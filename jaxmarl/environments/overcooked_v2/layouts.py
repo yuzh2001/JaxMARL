@@ -13,7 +13,7 @@ WBWXW
 cramped_room_v2 = """
 WWPWW
 I0A AI1
-W   W
+W   R
 WBWXW
 """
 
@@ -60,7 +60,7 @@ class Layout:
     width: int
     height: int
 
-    num_ingredients: int
+    recipe: np.ndarray
 
 
 def layout_grid_to_dict(grid):
@@ -94,6 +94,7 @@ def layout_grid_to_dict(grid):
         "X": StaticObject.GOAL,
         "B": StaticObject.PLATE_PILE,
         "P": StaticObject.POT,
+        "R": StaticObject.RECIPE_INDICATOR,
     }
 
     for r in range(10):
@@ -131,7 +132,7 @@ def layout_grid_to_dict(grid):
         static_objects=static_objects[:, :max_width],
         width=max_width,
         height=len(rows),
-        num_ingredients=10,
+        recipe=np.array([0, 0, 1]),
     )
 
     return layout

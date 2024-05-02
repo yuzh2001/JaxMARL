@@ -55,10 +55,12 @@ class State:
     time: chex.Array
     terminal: bool
 
+    recipe: int
+
 
 URGENCY_CUTOFF = 40  # When this many time steps remain, the urgency layer is flipped on
 DELIVERY_REWARD = 20
-POT_COOK_TIME = 20  # Time it takes to cook a pot of onions
+POT_COOK_TIME = 5  # 20  # Time it takes to cook a pot of onions
 
 
 class Overcooked(MultiAgentEnv):
@@ -147,11 +149,16 @@ class Overcooked(MultiAgentEnv):
             inventory=jnp.zeros((num_agents,), dtype=jnp.int32),
         )
 
+        recipe = 0
+        for ingredient in layout.recipe:
+            recipe += DynamicObject.ingredient(ingredient)
+
         state = State(
             agents=agents,
             grid=grid,
             time=0,
             terminal=False,
+            recipe=recipe,
         )
 
         obs = self.get_obs(state)
@@ -268,7 +275,7 @@ class Overcooked(MultiAgentEnv):
                 print("interact: ", agent.pos, agent.dir)
 
                 new_grid, new_agent, interact_reward = self.process_interact(
-                    grid, agent
+                    grid, agent, state.recipe
                 )
 
                 carry = (new_grid, reward + interact_reward)
@@ -310,6 +317,7 @@ class Overcooked(MultiAgentEnv):
         self,
         grid: chex.Array,
         agent: Agent,
+        recipe: int,
     ):
         """Assume agent took interact actions. Result depends on what agent is facing and what it is holding."""
 
@@ -335,7 +343,8 @@ class Overcooked(MultiAgentEnv):
         object_has_no_ingredients = jnp.array(interact_ingredients == 0)
 
         inventory_is_empty = inventory == 0
-        inventory_is_ingredient = (inventory & DynamicObject.PLATE) == 0
+        inventory_is_ingredient = DynamicObject.is_ingredient(inventory)
+        print("inventory_is_ingredient: ", inventory_is_ingredient)
         inventory_is_plate = inventory == DynamicObject.PLATE
         inventory_is_dish = (inventory & DynamicObject.COOKED) != 0
 
@@ -355,8 +364,11 @@ class Overcooked(MultiAgentEnv):
         print("object_is_pile: ", object_is_pile)
         print("inventory_is_empty: ", inventory_is_empty)
 
-        pot_full = DynamicObject.ingredient_count(interact_ingredients) == 3
+        pot_full = jnp.array(DynamicObject.ingredient_count(interact_ingredients) == 3)
+        print("pot_full: ", pot_full)
 
+        print("test", object_is_wall, object_has_no_ingredients, inventory_is_empty)
+        print("test2", pot_is_idle, inventory_is_ingredient, ~pot_full)
         successful_drop = (
             object_is_wall * object_has_no_ingredients * ~inventory_is_empty
             + pot_is_idle * inventory_is_ingredient * ~pot_full
@@ -371,6 +383,7 @@ class Overcooked(MultiAgentEnv):
             object_is_plate_pile * DynamicObject.PLATE
             + object_is_ingredient_pile * StaticObject.get_ingredient(interact_item)
         )
+        print("pile_ingredient: ", pile_ingredient)
 
         new_ingredients = (
             successful_drop * merged_ingredients + no_effect * interact_ingredients
@@ -384,13 +397,22 @@ class Overcooked(MultiAgentEnv):
         new_cell = jnp.array([interact_item, new_ingredients, new_extra])
 
         new_grid = grid.at[fwd_pos.y, fwd_pos.x].set(new_cell)
+        print(successful_pickup, successful_drop, successful_delivery, no_effect)
+        print(pile_ingredient, merged_ingredients, pile_ingredient + merged_ingredients)
         new_inventory = (
             successful_pickup * (pile_ingredient + merged_ingredients)
             + no_effect * inventory
         )
         print("new_inventory: ", new_inventory)
         new_agent = agent.replace(inventory=new_inventory)
-        reward = jnp.array(successful_delivery, dtype=float) * DELIVERY_REWARD
+
+        plated_recipe = recipe | DynamicObject.PLATE | DynamicObject.COOKED
+        is_correct_recipe = inventory == plated_recipe
+        print("is_correct_recipe: ", is_correct_recipe)
+        reward = (
+            jnp.array(successful_delivery & is_correct_recipe, dtype=float)
+            * DELIVERY_REWARD
+        )
 
         return new_grid, new_agent, reward
 
