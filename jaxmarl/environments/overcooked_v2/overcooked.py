@@ -36,6 +36,13 @@ class Actions(IntEnum):
     # done = 6
 
 
+ACTION_TO_DIRECTION = jnp.full((len(Actions),), -1)
+ACTION_TO_DIRECTION = ACTION_TO_DIRECTION.at[Actions.right].set(Direction.RIGHT)
+ACTION_TO_DIRECTION = ACTION_TO_DIRECTION.at[Actions.down].set(Direction.DOWN)
+ACTION_TO_DIRECTION = ACTION_TO_DIRECTION.at[Actions.left].set(Direction.LEFT)
+ACTION_TO_DIRECTION = ACTION_TO_DIRECTION.at[Actions.up].set(Direction.UP)
+
+
 @chex.dataclass
 class State:
     agents: Agent
@@ -200,28 +207,15 @@ class Overcooked(MultiAgentEnv):
         # 3. prevent swapping
         # TODO: handle collisions as previously and prevent swapping
         def _move_wrapper(agent, action):
-            ACTION_TO_DIRECTION = {
-                Actions.right: Direction.RIGHT,
-                Actions.down: Direction.DOWN,
-                Actions.left: Direction.LEFT,
-                Actions.up: Direction.UP,
-            }
-            print("action: ", action)
-            direction = ACTION_TO_DIRECTION.get(action, -1)
-            print("direction: ", direction)
+            direction = ACTION_TO_DIRECTION[action]
 
             def _move(agent, dir):
                 pos = agent.pos
                 new_pos = pos.move_in_bounds(dir, self.width, self.height)
 
-                print("new_pos: ", new_pos)
-                print("pos: ", pos)
-                print("grid[new_pos.y, new_pos.x, 0]: ", grid[new_pos.y, new_pos.x, 0])
-
                 new_pos = tree_select(
                     grid[new_pos.y, new_pos.x, 0] == StaticObject.EMPTY, new_pos, pos
                 )
-                print("new_pos: ", new_pos)
 
                 return agent.replace(pos=new_pos, dir=direction)
 
@@ -258,6 +252,8 @@ class Overcooked(MultiAgentEnv):
 
             def _interact(carry, agent):
                 grid, reward = carry
+
+                print("interact: ", agent.pos, agent.dir)
 
                 new_grid, new_agent, interact_reward = self.process_interact(
                     grid, agent
@@ -318,10 +314,11 @@ class Overcooked(MultiAgentEnv):
         interact_extra = interact_cell[2]
 
         # Booleans depending on what the object is
-        object_is_pile = jnp.logical_or(
-            interact_item == StaticObject.PLATE_PILE,
-            interact_item > StaticObject.INGREDIENT_PILE,
+        object_is_plate_pile = jnp.array(interact_item == StaticObject.PLATE_PILE)
+        object_is_ingredient_pile = jnp.array(
+            interact_item >= StaticObject.INGREDIENT_PILE
         )
+        object_is_pile = object_is_plate_pile | object_is_ingredient_pile
         object_is_pot = jnp.array(interact_item == StaticObject.POT)
         object_is_goal = jnp.array(interact_item == StaticObject.GOAL)
         object_is_wall = jnp.array(interact_item == StaticObject.WALL)
@@ -345,6 +342,10 @@ class Overcooked(MultiAgentEnv):
             + object_is_wall * ~object_has_no_ingredients * inventory_is_empty
         )
 
+        print("successful_pickup: ", successful_pickup)
+        print("object_is_pile: ", object_is_pile)
+        print("inventory_is_empty: ", inventory_is_empty)
+
         successful_drop = (
             object_is_wall * object_has_no_ingredients * ~inventory_is_empty
             + pot_is_idle * inventory_is_ingredient
@@ -354,6 +355,13 @@ class Overcooked(MultiAgentEnv):
 
         # TODO: watch out for duplicate ingredients and overflows
         merged_ingredients = interact_ingredients | inventory
+        print("merged_ingredients: ", merged_ingredients)
+        pile_ingredient = (
+            object_is_plate_pile * DynamicObject.PLATE
+            + object_is_ingredient_pile
+            * DynamicObject.INGREDIENT  # TODO: higher ingredients
+        )
+
         new_ingredients = (
             successful_drop * merged_ingredients + no_effect * interact_ingredients
         )
@@ -364,7 +372,10 @@ class Overcooked(MultiAgentEnv):
         new_cell = jnp.array([interact_item, new_ingredients, new_extra])
 
         new_grid = grid.at[fwd_pos.y, fwd_pos.x].set(new_cell)
-        new_inventory = successful_pickup * merged_ingredients + no_effect * inventory
+        new_inventory = (
+            successful_pickup * (pile_ingredient + merged_ingredients)
+            + no_effect * inventory
+        )
         print("new_inventory: ", new_inventory)
         new_agent = agent.replace(inventory=new_inventory)
         reward = jnp.array(successful_delivery, dtype=float) * DELIVERY_REWARD

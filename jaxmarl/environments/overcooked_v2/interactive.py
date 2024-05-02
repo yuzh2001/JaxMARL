@@ -167,7 +167,7 @@ if __name__ == "__main__":
     #     obs_viz = OvercookedV2Visualizer()
     #     obs_viz2 = OvercookedV2Visualizer()
 
-    with jax.disable_jit(True):
+    with jax.disable_jit(False):
         jit_reset = jax.jit(env.reset)
         # jit_reset = env.reset_env
         key = jax.random.PRNGKey(args.seed)

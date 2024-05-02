@@ -8,6 +8,7 @@ import jax
 
 # from jaxmarl.environments.overcooked_v2.common import OBJECT_TO_INDEX, COLOR_TO_INDEX, COLORS
 from jaxmarl.environments.overcooked_v2.common import StaticObject, DynamicObject
+from jaxmarl.environments.overcooked_v2.overcooked import POT_COOK_TIME
 
 # INDEX_TO_COLOR = [k for k,v in COLOR_TO_INDEX.items()]
 TILE_PIXELS = 32
@@ -172,10 +173,7 @@ class OvercookedV2Visualizer:
                 OvercookedV2Visualizer._render_inv(ingredients, img)
 
             case StaticObject.POT:
-                # OvercookedV2Visualizer._render_pot(cell, img)
-                rendering.fill_coords(
-                    img, rendering.point_in_rect(0, 1, 0, 1), COLORS["black"]
-                )
+                OvercookedV2Visualizer._render_pot(cell, img)
 
             case StaticObject.PLATE_PILE:
                 rendering.fill_coords(
@@ -214,52 +212,57 @@ class OvercookedV2Visualizer:
                     f"Rendering object at index {static_object} is currently unsupported."
                 )
 
-    # @classmethod
-    # def _render_pot(cls, obj, img):
-    #     pot_status = obj[-1]
-    #     num_onions = np.max([23 - pot_status, 0])
-    #     is_cooking = np.array((pot_status < 20) * (pot_status > 0))
-    #     is_done = np.array(pot_status == 0)
+    @classmethod
+    def _render_pot(cls, cell, img):
+        ingredients = cell[1]
+        time_left = cell[2]
 
-    #     pot_fn = rendering.point_in_rect(0.1, 0.9, 0.33, 0.9)
-    #     lid_fn = rendering.point_in_rect(0.1, 0.9, 0.21, 0.25)
-    #     handle_fn = rendering.point_in_rect(0.4, 0.6, 0.16, 0.21)
+        is_cooking = time_left > 0
+        is_cooked = (ingredients & DynamicObject.COOKED) != 0
 
-    #     rendering.fill_coords(img, rendering.point_in_rect(0, 1, 0, 1), COLORS["grey"])
+        # num_onions = np.max([23 - pot_status, 0])
+        # is_cooking = np.array((pot_status < 20) * (pot_status > 0))
+        # is_done = np.array(pot_status == 0)
+        num_onions = 3
 
-    #     # Render onions in pot
-    #     if num_onions > 0 and not is_done:
-    #         onion_fns = [
-    #             rendering.point_in_circle(*coord, 0.13)
-    #             for coord in [(0.23, 0.33), (0.77, 0.33), (0.50, 0.33)]
-    #         ]
-    #         onion_fns = onion_fns[:num_onions]
-    #         [
-    #             rendering.fill_coords(img, onion_fn, COLORS["yellow"])
-    #             for onion_fn in onion_fns
-    #         ]
-    #         if not is_cooking:
-    #             lid_fn = rendering.rotate_fn(
-    #                 lid_fn, cx=0.1, cy=0.25, theta=-0.1 * math.pi
-    #             )
-    #             handle_fn = rendering.rotate_fn(
-    #                 handle_fn, cx=0.1, cy=0.25, theta=-0.1 * math.pi
-    #             )
+        pot_fn = rendering.point_in_rect(0.1, 0.9, 0.33, 0.9)
+        lid_fn = rendering.point_in_rect(0.1, 0.9, 0.21, 0.25)
+        handle_fn = rendering.point_in_rect(0.4, 0.6, 0.16, 0.21)
 
-    #     # Render done soup
-    #     if is_done:
-    #         soup_fn = rendering.point_in_rect(0.12, 0.88, 0.23, 0.35)
-    #         rendering.fill_coords(img, soup_fn, COLORS["orange"])if
-    #     # Render the pot itself
-    #     pot_fns = [pot_fn, lid_fn, handle_fn]
-    #     [rendering.fill_coords(img, pot_fn, COLORS["black"]) for pot_fn in pot_fns]
+        rendering.fill_coords(img, rendering.point_in_rect(0, 1, 0, 1), COLORS["grey"])
 
-    #     # Render progress bar
-    #     if is_cooking:
-    #         progress_fn = rendering.point_in_rect(
-    #             0.1, 0.9 - (0.9 - 0.1) / 20 * pot_status, 0.83, 0.88
-    #         )
-    #         rendering.fill_coords(img, progress_fn, COLORS["green"])
+        if ingredients > 0 and not is_cooked:
+            onion_fns = [
+                rendering.point_in_circle(*coord, 0.13)
+                for coord in [(0.23, 0.33), (0.77, 0.33), (0.50, 0.33)]
+            ]
+            onion_fns = onion_fns[:num_onions]
+            [
+                rendering.fill_coords(img, onion_fn, COLORS["yellow"])
+                for onion_fn in onion_fns
+            ]
+            if not is_cooking:
+                lid_fn = rendering.rotate_fn(
+                    lid_fn, cx=0.1, cy=0.25, theta=-0.1 * math.pi
+                )
+                handle_fn = rendering.rotate_fn(
+                    handle_fn, cx=0.1, cy=0.25, theta=-0.1 * math.pi
+                )
+
+        # Render done soup
+        if is_cooked:
+            soup_fn = rendering.point_in_rect(0.12, 0.88, 0.23, 0.35)
+            rendering.fill_coords(img, soup_fn, COLORS["orange"])
+        # Render the pot itself
+        pot_fns = [pot_fn, lid_fn, handle_fn]
+        [rendering.fill_coords(img, pot_fn, COLORS["black"]) for pot_fn in pot_fns]
+
+        # Render progress bar
+        if is_cooking:
+            progress_fn = rendering.point_in_rect(
+                0.1, 0.9 - (0.9 - 0.1) / POT_COOK_TIME * time_left, 0.83, 0.88
+            )
+            rendering.fill_coords(img, progress_fn, COLORS["green"])
 
     @classmethod
     def _render_inv(cls, ingredients, img):
