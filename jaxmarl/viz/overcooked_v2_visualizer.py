@@ -64,23 +64,19 @@ class OvercookedV2Visualizer:
 
     def render(self, agent_view_size, state, highlight=True, tile_size=TILE_PIXELS):
         """Method for rendering the state in a window. Esp. useful for interactive mode."""
-        return self._render_state(agent_view_size, state, highlight, tile_size)
+        self._lazy_init_window()
+
+        img = self._render_state(agent_view_size, state, highlight, tile_size)
+
+        self.window.show_img(img)
 
     def animate(self, state_seq, agent_view_size, filename="animation.gif"):
         """Animate a gif give a state sequence and save if to file."""
         import imageio
 
-        padding = agent_view_size - 2  # show
-
         def get_frame(state):
-            grid = np.asarray(state.maze_map[padding:-padding, padding:-padding, :])
-            # Render the state
-            frame = OvercookedV2Visualizer._render_grid(
-                grid,
-                tile_size=TILE_PIXELS,
-                highlight_mask=None,
-                agent_dir_idx=state.agent_dir_idx,
-                agent_inv=state.agent_inv,
+            frame = OvercookedV2Visualizer._render_state(
+                agent_view_size, state, highlight=False
             )
             return frame
 
@@ -88,28 +84,13 @@ class OvercookedV2Visualizer:
 
         imageio.mimsave(filename, frame_seq, "GIF", duration=0.5)
 
-    def render_grid(self, grid, tile_size=TILE_PIXELS, k_rot90=0, agent_dir_idx=None):
-        self._lazy_init_window()
-
-        img = OvercookedV2Visualizer._render_grid(
-            grid,
-            tile_size,
-            highlight_mask=None,
-            agent_dir_idx=agent_dir_idx,
-        )
-        # img = np.transpose(img, axes=(1,0,2))
-        if k_rot90 > 0:
-            img = np.rot90(img, k=k_rot90)
-
-        self.window.show_img(img)
-
+    @classmethod
     def _render_state(
-        self, agent_view_size, state, highlight=True, tile_size=TILE_PIXELS
+        cls, agent_view_size, state, highlight=True, tile_size=TILE_PIXELS
     ):
         """
         Render the state
         """
-        self._lazy_init_window()
 
         grid = state.grid
         agents = state.agents
@@ -138,7 +119,7 @@ class OvercookedV2Visualizer:
             grid,
             tile_size,
         )
-        self.window.show_img(img)
+        return img
 
     @classmethod
     def _render_cell(cls, cell, img):
