@@ -7,8 +7,8 @@ import numpy as np
 
 # from jaxmarl.gridworld.maze import Maze #, Actions
 # from jaxmarl.gridworld.ma_maze import MAMaze
-from jaxmarl.environments.overcooked_v2.overcooked import Overcooked, Actions
-from jaxmarl.environments.overcooked_v2.layouts import overcooked_layouts as layouts
+from jaxmarl.environments.overcooked_v2.overcooked import OvercookedV2, Actions
+from jaxmarl.environments.overcooked_v2.layouts import overcooked_v2_layouts as layouts
 from jaxmarl.viz.overcooked_v2_visualizer import OvercookedV2Visualizer
 
 
@@ -158,7 +158,7 @@ if __name__ == "__main__":
     if len(args.layout) == 0:
         raise ValueError("You must provide a layout.")
     layout = layouts[args.layout]
-    env = Overcooked(layout=layout)
+    env = OvercookedV2(layout=layout)
 
     viz = OvercookedV2Visualizer()
     obs_viz = None

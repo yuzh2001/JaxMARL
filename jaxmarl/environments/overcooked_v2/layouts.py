@@ -139,7 +139,7 @@ def layout_grid_to_dict(grid):
     return layout
 
 
-overcooked_layouts = {
+overcooked_v2_layouts = {
     "cramped_room": layout_grid_to_dict(cramped_room),
     "cramped_room_v2": layout_grid_to_dict(cramped_room_v2),
     "asymm_advantages": layout_grid_to_dict(asymm_advantages),

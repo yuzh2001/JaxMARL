@@ -25,9 +25,9 @@ from .environments import (
     InTheGrid_2p,
     Hanabi,
     Overcooked,
+    OvercookedV2,
     CoinGame,
 )
-
 
 
 def make(env_id: str, **env_kwargs):
@@ -93,7 +93,7 @@ def make(env_id: str, **env_kwargs):
     # 5. InTheGrid
     elif env_id == "storm_2p":
         env = InTheGrid_2p(**env_kwargs)
-    
+
     # 6. Hanabi
     elif env_id == "hanabi":
         env = Hanabi(**env_kwargs)
@@ -101,12 +101,15 @@ def make(env_id: str, **env_kwargs):
     # 7. Overcooked
     elif env_id == "overcooked":
         env = Overcooked(**env_kwargs)
+    elif env_id == "overcooked_v2":
+        env = OvercookedV2(**env_kwargs)
 
     # 8. Coin Game
     elif env_id == "coin_game":
         env = CoinGame(**env_kwargs)
 
     return env
+
 
 registered_envs = [
     "MPE_simple_v3",
@@ -135,5 +138,6 @@ registered_envs = [
     "storm_2p",
     "hanabi",
     "overcooked",
+    "overcooked_v2",
     "coin_game",
 ]
