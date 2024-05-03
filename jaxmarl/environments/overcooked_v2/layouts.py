@@ -54,7 +54,7 @@ WWWOOWWW
 @struct.dataclass
 class Layout:
     # agent positions list of positions num_agents x 2 (x, y)
-    agent_positions: np.ndarray
+    agent_positions: jnp.ndarray
 
     # width x height grid with static items
     static_objects: np.ndarray

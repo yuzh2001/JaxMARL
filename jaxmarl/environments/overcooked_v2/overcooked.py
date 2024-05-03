@@ -72,8 +72,9 @@ class Overcooked(MultiAgentEnv):
         # random_reset: bool = False,
         max_steps: int = 400,
     ):
-        # Sets self.num_agents to 2
-        super().__init__(num_agents=2)
+        num_agents = len(layout.agent_positions)
+
+        super().__init__(num_agents=num_agents)
 
         # self.obs_shape = (agent_view_size, agent_view_size, 3)
         # Observations given by 26 channels, most of which are boolean masks
@@ -82,11 +83,8 @@ class Overcooked(MultiAgentEnv):
         # self.obs_shape = (420,)
         self.obs_shape = (self.width, self.height, 3)
 
-        self.agent_view_size = (
-            5  # Hard coded. Only affects map padding -- not observations.
-        )
         self.layout = layout
-        self.agents = ["agent_0", "agent_1"]
+        self.agents = [f"agent_{i}" for i in range(num_agents)]
 
         self.action_set = jnp.array(list(Actions))
 
@@ -102,7 +100,7 @@ class Overcooked(MultiAgentEnv):
         """Perform single timestep state transition."""
 
         acts = self.action_set.take(
-            indices=jnp.array([actions["agent_0"], actions["agent_1"]])
+            indices=jnp.array([actions[f"agent_{i}"] for i in range(self.num_agents)])
         )
 
         state, reward = self.step_agents(key, state, acts)
@@ -114,8 +112,9 @@ class Overcooked(MultiAgentEnv):
 
         obs = self.get_obs(state)
 
-        rewards = {"agent_0": reward, "agent_1": reward}
-        dones = {"agent_0": done, "agent_1": done, "__all__": done}
+        rewards = {f"agent_{i}": reward for i in range(self.num_agents)}
+        dones = {f"agent_{i}": done for i in range(self.num_agents)}
+        dones["__all__"] = done
 
         return (
             lax.stop_gradient(obs),
@@ -144,7 +143,7 @@ class Overcooked(MultiAgentEnv):
         num_agents = self.num_agents
         positions = layout.agent_positions
         agents = Agent(
-            pos=Position(x=jnp.array(positions[:, 0]), y=jnp.array(positions[:, 1])),
+            pos=Position(x=positions[:, 0], y=positions[:, 1]),
             dir=jnp.full((num_agents,), Direction.UP),
             inventory=jnp.zeros((num_agents,), dtype=jnp.int32),
         )
@@ -176,6 +175,8 @@ class Overcooked(MultiAgentEnv):
 
         agents = state.agents
         obs = state.grid
+
+
 
         def _include_agents(grid, agent):
             pos = agent.pos
@@ -235,11 +236,11 @@ class Overcooked(MultiAgentEnv):
         new_agents = jax.vmap(_move_wrapper)(state.agents, actions)
 
         # Resolve collisions:
-        def _resolved_positions(mask):
+        def _masked_positions(mask):
             return tree_select(mask, state.agents.pos, new_agents.pos)
 
         def _get_collisions(mask):
-            positions = _resolved_positions(mask)
+            positions = _masked_positions(mask)
 
             collision_grid = jnp.zeros((self.height, self.width))
             collision_grid, _ = jax.lax.scan(
@@ -259,10 +260,23 @@ class Overcooked(MultiAgentEnv):
             lambda mask: mask | _get_collisions(mask),
             initial_mask,
         )
-        new_agents = new_agents.replace(pos=_resolved_positions(mask))
+        new_agents = new_agents.replace(pos=_masked_positions(mask))
 
         # Prevent swapping:
-        # TODO: implement this
+        # def _compute_swap_mask(new_positions, original_positions):
+        #     new_pos_expanded = jnp.expand_dims(new_positions, axis=1)
+        #     original_pos_expanded = jnp.expand_dims(original_positions, axis=0)
+
+        #     swap_mask = (new_pos_expanded == original_pos_expanded).all(axis=-1)
+        #     swap_mask = jnp.fill_diagonal(swap_mask, False)
+
+        #     swap_pairs = jnp.logical_and(swap_mask, swap_mask.T)
+
+        #     swapped_agents = jnp.any(swap_pairs, axis=0)
+        #     return ~swapped_agents
+
+        # swap_mask = _compute_swap_mask(new_agents.pos, state.agents.pos)
+        # new_agents = new_agents.replace(pos=_masked_positions(swap_mask))
 
         # Interact action:
         def _interact_wrapper(carry, x):

@@ -1,6 +1,5 @@
 import numpy as np
 import jax.numpy as jnp
-from flax import struct
 import chex
 import jax
 
@@ -131,31 +130,3 @@ class Agent:
     @staticmethod
     def from_position(pos):
         return Agent(pos, jnp.array([Direction.UP]), jnp.zeros((1,)))
-
-
-# class OvercookedState(struct.PyTreeNode):
-#     """
-#     Overcooked state representation.
-#     """
-
-#     agent_pos = chex.Array(jnp.array([0, 0]), dtype=jnp.int32)
-#     agent_dir_idx = chex.Array(jnp.array([0]), dtype=jnp.int32)
-#     grid = chex.Array(jnp.array([0]), dtype=jnp.int32)
-#     time = chex.Array(jnp.array([0]), dtype=jnp.int32)
-
-
-# Map of agent direction indices to vectors
-DIR_TO_VEC = jnp.array(
-    [
-        # Pointing right (positive X)
-        # (1, 0), # right
-        # (0, 1), # down
-        # (-1, 0), # left
-        # (0, -1), # up
-        (0, -1),  # NORTH
-        (0, 1),  # SOUTH
-        (1, 0),  # EAST
-        (-1, 0),  # WEST
-    ],
-    dtype=jnp.int8,
-)

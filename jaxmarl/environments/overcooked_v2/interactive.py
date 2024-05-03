@@ -163,9 +163,6 @@ if __name__ == "__main__":
     viz = OvercookedV2Visualizer()
     obs_viz = None
     obs_viz2 = None
-    # if args.render_agent_view:
-    #     obs_viz = OvercookedV2Visualizer()
-    #     obs_viz2 = OvercookedV2Visualizer()
 
     with jax.disable_jit(False):
         jit_reset = jax.jit(env.reset)
@@ -173,7 +170,7 @@ if __name__ == "__main__":
         key = jax.random.PRNGKey(args.seed)
         key, subkey = jax.random.split(key)
         o0, s0 = jit_reset(subkey)
-        viz.render(env.agent_view_size, s0, highlight=False)
+        viz.render(0, s0, highlight=False)
 
         print("obs shape: ", o0["agent_0"].shape)
         print("obs: ", o0["agent_0"])
@@ -187,7 +184,8 @@ if __name__ == "__main__":
             "obs_viz": obs_viz,
             "obs_viz2": obs_viz2,
             "jit_reset": jit_reset,
-            "agent_view_size": env.agent_view_size,
+            # "agent_view_size": env.agent_view_size,
+            "agent_view_size": 0,
             "debug": args.debug,
         }
 
