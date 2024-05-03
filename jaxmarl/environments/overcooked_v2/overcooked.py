@@ -20,7 +20,7 @@ from jaxmarl.environments.overcooked_v2.common import (
 )
 
 
-from jaxmarl.environments.overcooked_v2.layouts import overcooked_layouts as layouts
+from jaxmarl.environments.overcooked_v2.layouts import overcooked_v2_layouts as layouts
 from jaxmarl.environments.overcooked_v2.utils import tree_select
 
 
@@ -63,7 +63,7 @@ DELIVERY_REWARD = 20
 POT_COOK_TIME = 5  # 20  # Time it takes to cook a pot of onions
 
 
-class Overcooked(MultiAgentEnv):
+class OvercookedV2(MultiAgentEnv):
     """Vanilla Overcooked"""
 
     def __init__(
@@ -176,7 +176,11 @@ class Overcooked(MultiAgentEnv):
         agents = state.agents
         obs = state.grid
 
-
+        recipe_indicator_mask = obs[:, :, 0] == StaticObject.RECIPE_INDICATOR
+        new_ingredients_layer = jnp.where(
+            recipe_indicator_mask, state.recipe, obs[:, :, 1]
+        )
+        obs = obs.at[:, :, 1].set(new_ingredients_layer)
 
         def _include_agents(grid, agent):
             pos = agent.pos
