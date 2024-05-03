@@ -11,7 +11,7 @@
 "VF_COEF": 0.5
 "MAX_GRAD_NORM": 0.5
 "ACTIVATION": "tanh"
-"ENV_NAME": "overcooked"
+"ENV_NAME": "overcooked_v2"
 "ENV_KWARGS": 
   "layout" : "cramped_room"
 "ANNEAL_LR": True

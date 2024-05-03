@@ -14,8 +14,8 @@ import distrax
 from gymnax.wrappers.purerl import LogWrapper, FlattenObservationWrapper
 import jaxmarl
 from jaxmarl.wrappers.baselines import LogWrapper
-from jaxmarl.environments.overcooked import overcooked_layouts
-from jaxmarl.viz.overcooked_visualizer import OvercookedVisualizer
+from jaxmarl.environments import overcooked_v2_layouts
+from jaxmarl.viz.overcooked_v2_visualizer import OvercookedV2Visualizer
 import hydra
 from omegaconf import OmegaConf
 from datetime import datetime
@@ -140,7 +140,7 @@ def make_train(config):
     )
 
     env = LogWrapper(env, replace_info=False)
-
+    
     def linear_schedule(count):
         frac = (
             1.0
@@ -207,7 +207,9 @@ def make_train(config):
                 obsv, env_state, reward, done, info = jax.vmap(
                     env.step, in_axes=(0, 0, 0)
                 )(rng_step, env_state, env_act)
-                info = jax.tree_util.tree_map(lambda x: x.reshape((config["NUM_ACTORS"])), info)
+                info = jax.tree_util.tree_map(
+                    lambda x: x.reshape((config["NUM_ACTORS"])), info
+                )
                 transition = Transition(
                     batchify(done, env.agents, config["NUM_ACTORS"]).squeeze(),
                     action,
@@ -362,12 +364,14 @@ def make_train(config):
     return train
 
 
-@hydra.main(version_base=None, config_path="config", config_name="ippo_ff_overcooked")
+@hydra.main(
+    version_base=None, config_path="config", config_name="ippo_ff_overcooked_v2"
+)
 def main(config):
     config = OmegaConf.to_container(config)
 
     layout_name = config["ENV_KWARGS"]["layout"]
-    config["ENV_KWARGS"]["layout"] = overcooked_layouts[layout_name]
+    config["ENV_KWARGS"]["layout"] = overcooked_v2_layouts[layout_name]
     num_seeds = config["NUM_SEEDS"]
 
     wandb.init(
@@ -376,7 +380,7 @@ def main(config):
         tags=["IPPO", "FF"],
         config=config,
         mode=config["WANDB_MODE"],
-        name=f"ippo_ff_overcooked_{layout_name}",
+        name=f"ippo_ff_overcooked_v2_{layout_name}",
     )
 
     with jax.disable_jit(False):
@@ -414,9 +418,9 @@ def main(config):
     print("Final reward mean: ", reward_mean[-1])
 
     # # animate first seed
-    # train_state = jax.tree_map(lambda x: x[0], out["runner_state"][0])
+    # train_state = jax.tree_util.tree_map(lambda x: x[0], out["runner_state"][0])
     # state_seq = get_rollout(train_state, config)
-    # viz = OvercookedVisualizer()
+    # viz = OvercookedV2Visualizer()
     # # agent_view_size is hardcoded as it determines the padding around the layout.
     # viz.animate(state_seq, agent_view_size=5, filename=f"{filename}.gif")
 
