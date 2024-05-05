@@ -220,18 +220,24 @@ class OvercookedV2Visualizer:
 
     @classmethod
     def _render_counter(cls, ingredients, img):
-        if ingredients & DynamicObject.COOKED:
-            plate_fn = rendering.point_in_circle(0.5, 0.5, 0.2)
+        if ingredients & DynamicObject.PLATE:
+            plate_fn = rendering.point_in_circle(0.5, 0.5, 0.3)
             rendering.fill_coords(img, plate_fn, COLORS["white"])
-            onion_fn = rendering.point_in_circle(0.5, 0.5, 0.13)
-            rendering.fill_coords(img, onion_fn, COLORS["orange"])
-        elif ingredients == DynamicObject.PLATE:
-            plate_fn = rendering.point_in_circle(0.5, 0.5, 0.2)
-            rendering.fill_coords(img, plate_fn, COLORS["white"])
-        elif DynamicObject.is_ingredient(ingredients):
+
+        if DynamicObject.is_ingredient(ingredients):
             idx = DynamicObject.get_ingredient_idx(ingredients)
             ingredient_fn = rendering.point_in_circle(0.5, 0.5, 0.15)
             rendering.fill_coords(img, ingredient_fn, INGREDIENT_COLORS[idx])
+
+        if ingredients & DynamicObject.COOKED:
+            positions = [(0.5, 0.4), (0.4, 0.6), (0.6, 0.6)]
+            ingredient_indices = DynamicObject.get_ingredient_idx_list(ingredients)
+
+            for idx, ingredient_idx in enumerate(ingredient_indices):
+                color = INGREDIENT_COLORS[ingredient_idx]
+                pos = positions[min(idx, len(positions) - 1)]
+                ingredient_fn = rendering.point_in_circle(pos[0], pos[1], 0.1)
+                rendering.fill_coords(img, ingredient_fn, color)
 
     @classmethod
     def _render_pot(cls, cell, img):
@@ -240,6 +246,7 @@ class OvercookedV2Visualizer:
 
         is_cooking = time_left > 0
         is_cooked = (ingredients & DynamicObject.COOKED) != 0
+        is_idle = not is_cooking and not is_cooked
         ingredients = DynamicObject.get_ingredient_idx_list(ingredients)
 
         pot_fn = rendering.point_in_rect(0.1, 0.9, 0.33, 0.9)
@@ -248,7 +255,7 @@ class OvercookedV2Visualizer:
 
         rendering.fill_coords(img, rendering.point_in_rect(0, 1, 0, 1), COLORS["grey"])
 
-        if len(ingredients) > 0 and not is_cooked:
+        if len(ingredients) > 0:
             ingredient_fns = [
                 rendering.point_in_circle(*coord, 0.13)
                 for coord in [(0.23, 0.33), (0.77, 0.33), (0.50, 0.33)]
@@ -259,18 +266,16 @@ class OvercookedV2Visualizer:
                 )
                 for i, ingredient_idx in enumerate(ingredients)
             ]
-            if not is_cooking:
-                lid_fn = rendering.rotate_fn(
-                    lid_fn, cx=0.1, cy=0.25, theta=-0.1 * math.pi
-                )
-                handle_fn = rendering.rotate_fn(
-                    handle_fn, cx=0.1, cy=0.25, theta=-0.1 * math.pi
-                )
 
-        # Render done soup
-        if is_cooked:  # TODO show ingredients
-            soup_fn = rendering.point_in_rect(0.12, 0.88, 0.23, 0.35)
-            rendering.fill_coords(img, soup_fn, COLORS["orange"])
+        if len(ingredients) > 0 and is_idle:
+            lid_fn = rendering.rotate_fn(lid_fn, cx=0.1, cy=0.25, theta=-0.1 * math.pi)
+            handle_fn = rendering.rotate_fn(
+                handle_fn, cx=0.1, cy=0.25, theta=-0.1 * math.pi
+            )
+
+        # if is_cooked:
+        # TODO: maybe make it more obvious that the dish is cooked
+
         # Render the pot itself
         pot_fns = [pot_fn, lid_fn, handle_fn]
         [rendering.fill_coords(img, pot_fn, COLORS["black"]) for pot_fn in pot_fns]
@@ -296,9 +301,14 @@ class OvercookedV2Visualizer:
             plate_fn = rendering.point_in_circle(0.75, 0.75, 0.2)
             rendering.fill_coords(img, plate_fn, COLORS["white"])
         if ingredients & DynamicObject.COOKED:
-            # TODO: show ingridients
-            onion_fn = rendering.point_in_circle(0.75, 0.75, 0.13)
-            rendering.fill_coords(img, onion_fn, COLORS["orange"])
+            positions = [(0.65, 0.65), (0.85, 0.65), (0.75, 0.85)]
+            ingredient_indices = DynamicObject.get_ingredient_idx_list(ingredients)
+
+            for idx, ingredient_idx in enumerate(ingredient_indices):
+                color = INGREDIENT_COLORS[ingredient_idx]
+                pos = positions[min(idx, len(positions) - 1)]
+                ingredient_fn = rendering.point_in_circle(pos[0], pos[1], 0.10)
+                rendering.fill_coords(img, ingredient_fn, color)
 
     @classmethod
     def _render_tile(
