@@ -63,8 +63,10 @@ class Layout:
 
     recipe: np.ndarray
 
+    num_ingredients: int
 
-def layout_grid_to_dict(grid):
+
+def layout_grid_to_dict(grid, recipe=[0, 0, 0]):
     """Assumes `grid` is string representation of the layout, with 1 line per row, and the following symbols:
     W: wall
     A: agent
@@ -104,6 +106,7 @@ def layout_grid_to_dict(grid):
     agent_positions = []
 
     max_width = 0
+    num_ingredients = 0
     for r, row in enumerate(rows):
         j = 0
         c = 0
@@ -121,19 +124,30 @@ def layout_grid_to_dict(grid):
                 agent_pos = [c, r]
                 agent_positions.append(agent_pos)
 
-            static_objects[r, c] = char_to_static_item.get(char, StaticObject.EMPTY)
+            obj = char_to_static_item.get(char, StaticObject.EMPTY)
+            static_objects[r, c] = obj
+            if StaticObject.is_ingredient_pile(obj):
+                ingredient_idx = obj - StaticObject.INGREDIENT_PILE_BASE
+                num_ingredients = max(num_ingredients, ingredient_idx + 1)
+
             j += 1
             c += 1
         max_width = max(max_width, c)
 
     # TODO: add some sanity checks - e.g. agent must exist, surrounded by walls, etc.
 
+    if not (0 < len(recipe) <= 3):
+        raise ValueError("Recipe must be a list of length 1, 2, or 3")
+    if [i for i in recipe if i < 0 or i >= num_ingredients]:
+        raise ValueError("Invalid ingredient index in recipe")
+
     layout = Layout(
         agent_positions=jnp.array(agent_positions),
         static_objects=static_objects[:, :max_width],
         width=max_width,
         height=len(rows),
-        recipe=np.array([0, 0, 1]),
+        recipe=np.array(recipe),
+        num_ingredients=num_ingredients,
     )
 
     return layout
@@ -141,7 +155,7 @@ def layout_grid_to_dict(grid):
 
 overcooked_v2_layouts = {
     "cramped_room": layout_grid_to_dict(cramped_room),
-    "cramped_room_v2": layout_grid_to_dict(cramped_room_v2),
+    "cramped_room_v2": layout_grid_to_dict(cramped_room_v2, recipe=[0, 0, 1]),
     "asymm_advantages": layout_grid_to_dict(asymm_advantages),
     "coord_ring": layout_grid_to_dict(coord_ring),
     "forced_coord": layout_grid_to_dict(forced_coord),

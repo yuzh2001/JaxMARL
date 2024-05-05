@@ -24,6 +24,11 @@ from jaxmarl.environments.overcooked_v2.layouts import overcooked_v2_layouts as 
 from jaxmarl.environments.overcooked_v2.utils import tree_select
 
 
+class ObservationType(IntEnum):
+    LEGACY = 0
+    ENCODED = 1
+
+
 class Actions(IntEnum):
     # Turn left, turn right, move forward
     right = 0
@@ -32,7 +37,6 @@ class Actions(IntEnum):
     up = 3
     stay = 4
     interact = 5
-    # done = 6
 
 
 ACTION_TO_DIRECTION = jnp.full((len(Actions),), -1)
@@ -40,6 +44,12 @@ ACTION_TO_DIRECTION = ACTION_TO_DIRECTION.at[Actions.right].set(Direction.RIGHT)
 ACTION_TO_DIRECTION = ACTION_TO_DIRECTION.at[Actions.down].set(Direction.DOWN)
 ACTION_TO_DIRECTION = ACTION_TO_DIRECTION.at[Actions.left].set(Direction.LEFT)
 ACTION_TO_DIRECTION = ACTION_TO_DIRECTION.at[Actions.up].set(Direction.UP)
+
+# SHAPED_REWARDS = {
+#     "PLACEMENT_IN_POT": 3,
+#     "PLATE_PICKUP": 3,
+#     "SOUP_PICKUP": 5,
+# }
 
 
 @chex.dataclass
@@ -71,6 +81,7 @@ class OvercookedV2(MultiAgentEnv):
         layout=layouts["counter_circuit"],
         # random_reset: bool = False,
         max_steps: int = 400,
+        observation_type: ObservationType = ObservationType.LEGACY,
     ):
         num_agents = len(layout.agent_positions)
 
@@ -80,13 +91,15 @@ class OvercookedV2(MultiAgentEnv):
         # Observations given by 26 channels, most of which are boolean masks
         self.height = layout.height
         self.width = layout.width
-        # self.obs_shape = (420,)
-        self.obs_shape = (self.width, self.height, 3)
 
         self.layout = layout
         self.agents = [f"agent_{i}" for i in range(num_agents)]
 
         self.action_set = jnp.array(list(Actions))
+
+        self.observation_type = observation_type
+
+        self.obs_shape = self._get_obs_shape(observation_type)
 
         # self.random_reset = random_reset
         self.max_steps = max_steps
@@ -165,6 +178,28 @@ class OvercookedV2(MultiAgentEnv):
         return lax.stop_gradient(obs), lax.stop_gradient(state)
 
     def get_obs(self, state: State) -> Dict[str, chex.Array]:
+        match self.observation_type:
+            case ObservationType.LEGACY:
+                return self.get_obs_legacy(state)
+            case ObservationType.ENCODED:
+                return self.get_obs_encoded(state)
+            case _:
+                raise ValueError("Invalid observation type")
+
+    def _get_obs_shape(
+        self,
+        obs_type: ObservationType,
+    ) -> Tuple[int]:
+        if obs_type == ObservationType.LEGACY:
+            num_ingredients = self.layout.num_ingredients
+            num_layers = 10 + 2 * num_ingredients
+            return (self.height, self.width, num_layers)
+        elif obs_type == ObservationType.ENCODED:
+            return (self.height, self.width, 3)
+        else:
+            raise ValueError("Invalid observation type")
+
+    def get_obs_encoded(self, state: State) -> Dict[str, chex.Array]:
         """
         Return a full observation, of size (height x width x 3)
 
@@ -201,6 +236,87 @@ class OvercookedV2(MultiAgentEnv):
 
         obs_dict = {f"agent_{i}": obs for i, obs in enumerate(all_obs)}
         return obs_dict
+
+    def get_obs_legacy(self, state: State) -> Dict[str, chex.Array]:
+
+        width = self.width
+        height = self.height
+        num_ingredients = self.layout.num_ingredients
+
+        static_objects = state.grid[:, :, 0]
+
+        static_layers = [
+            jnp.array(static_objects == StaticObject.WALL, dtype=jnp.uint8),
+            jnp.array(static_objects == StaticObject.GOAL, dtype=jnp.uint8),
+            jnp.array(static_objects == StaticObject.POT, dtype=jnp.uint8),
+            jnp.array(static_objects == StaticObject.RECIPE_INDICATOR, dtype=jnp.uint8),
+            jnp.array(static_objects == StaticObject.PLATE_PILE, dtype=jnp.uint8),
+        ]
+        for i in range(num_ingredients):
+            static_layers.append(
+                jnp.array(
+                    static_objects == StaticObject.INGREDIENT_PILE_BASE + i,
+                    dtype=jnp.uint8,
+                )
+            )
+
+        ingredients = state.grid[:, :, 1]
+
+        recipe_indicator_mask = static_objects == StaticObject.RECIPE_INDICATOR
+        # ingredients = jnp.where(recipe_indicator_mask, state.recipe, ingredients)
+        ingredients = ingredients.at[state.agents.pos.y, state.agents.pos.x].set(
+            state.agents.inventory
+        )
+
+        ingredients_layers = [
+            jnp.array(ingredients & DynamicObject.PLATE != 0, dtype=jnp.uint8),
+            jnp.array(ingredients & DynamicObject.COOKED != 0, dtype=jnp.uint8),
+        ]
+
+        tmp_ingredients = ingredients
+        for _ in range(num_ingredients):
+            tmp_ingredients >>= 2
+            ingredients_layers.append(jnp.array(tmp_ingredients & 0x3, dtype=jnp.uint8))
+
+        extra_info = state.grid[:, :, 2]
+        extra_layers = [
+            jnp.array(
+                jnp.where(static_objects == StaticObject.POT, extra_info, 0),
+                dtype=jnp.uint8,
+            ),
+        ]
+
+        all_agent_layer = jnp.zeros((height, width), dtype=jnp.uint8)
+        print(state.agents.pos)
+        print(state.agents.dir)
+        all_agent_layer = all_agent_layer.at[
+            state.agents.pos.y, state.agents.pos.x
+        ].set(state.agents.dir)
+        agent_self_layer = jnp.zeros((height, width), dtype=jnp.uint8)
+
+        agent_layers = [
+            agent_self_layer,
+            all_agent_layer,
+            # all_agent_layer[:, :, 0],
+            # all_agent_layer[:, :, 1],
+            # all_agent_layer[:, :, 2],
+            # all_agent_layer[:, :, 3],
+        ]
+
+        all_layers = agent_layers + static_layers + ingredients_layers + extra_layers
+
+        obs = jnp.stack(
+            all_layers,
+            axis=-1,
+        )
+
+        def _agent_obs(agent):
+            pos = agent.pos
+            return obs.at[pos.y, pos.x, 0].set(1)
+
+        all_obs = jax.vmap(_agent_obs)(state.agents)
+
+        return {f"agent_{i}": obs for i, obs in enumerate(all_obs)}
 
     def step_agents(
         self,
