@@ -39,17 +39,24 @@ class Actions(IntEnum):
     interact = 5
 
 
-ACTION_TO_DIRECTION = jnp.full((len(Actions),), -1)
-ACTION_TO_DIRECTION = ACTION_TO_DIRECTION.at[Actions.right].set(Direction.RIGHT)
-ACTION_TO_DIRECTION = ACTION_TO_DIRECTION.at[Actions.down].set(Direction.DOWN)
-ACTION_TO_DIRECTION = ACTION_TO_DIRECTION.at[Actions.left].set(Direction.LEFT)
-ACTION_TO_DIRECTION = ACTION_TO_DIRECTION.at[Actions.up].set(Direction.UP)
+ACTION_TO_DIRECTION = (
+    jnp.full((len(Actions),), -1)
+    .at[Actions.right]
+    .set(Direction.RIGHT)
+    .at[Actions.down]
+    .set(Direction.DOWN)
+    .at[Actions.left]
+    .set(Direction.LEFT)
+    .at[Actions.up]
+    .set(Direction.UP)
+)
 
-# SHAPED_REWARDS = {
-#     "PLACEMENT_IN_POT": 3,
-#     "PLATE_PICKUP": 3,
-#     "SOUP_PICKUP": 5,
-# }
+
+SHAPED_REWARDS = {
+    "PLACEMENT_IN_POT": 3,
+    "PLATE_PICKUP": 3,
+    "SOUP_PICKUP": 5,
+}
 
 
 @chex.dataclass
@@ -116,7 +123,7 @@ class OvercookedV2(MultiAgentEnv):
             indices=jnp.array([actions[f"agent_{i}"] for i in range(self.num_agents)])
         )
 
-        state, reward = self.step_agents(key, state, acts)
+        state, reward, shaped_rewards = self.step_agents(key, state, acts)
 
         state = state.replace(time=state.time + 1)
 
@@ -126,6 +133,11 @@ class OvercookedV2(MultiAgentEnv):
         obs = self.get_obs(state)
 
         rewards = {f"agent_{i}": reward for i in range(self.num_agents)}
+        shaped_rewards = {
+            f"agent_{i}": shaped_reward
+            for i, shaped_reward in enumerate(shaped_rewards)
+        }
+
         dones = {f"agent_{i}": done for i in range(self.num_agents)}
         dones["__all__"] = done
 
@@ -134,7 +146,7 @@ class OvercookedV2(MultiAgentEnv):
             lax.stop_gradient(state),
             rewards,
             dones,
-            {},
+            {"shaped_reward": shaped_rewards},
         )
 
     def reset(
@@ -263,7 +275,7 @@ class OvercookedV2(MultiAgentEnv):
         ingredients = state.grid[:, :, 1]
 
         recipe_indicator_mask = static_objects == StaticObject.RECIPE_INDICATOR
-        # ingredients = jnp.where(recipe_indicator_mask, state.recipe, ingredients)
+        ingredients = jnp.where(recipe_indicator_mask, state.recipe, ingredients)
         ingredients = ingredients.at[state.agents.pos.y, state.agents.pos.x].set(
             state.agents.inventory
         )
@@ -408,20 +420,22 @@ class OvercookedV2(MultiAgentEnv):
 
                 print("interact: ", agent.pos, agent.dir)
 
-                new_grid, new_agent, interact_reward = self.process_interact(
-                    grid, agent, state.recipe
+                new_grid, new_agent, interact_reward, shaped_reward = (
+                    self.process_interact(grid, agent, state.recipe)
                 )
 
                 carry = (new_grid, reward + interact_reward)
-                return carry, new_agent
+                return carry, (new_agent, shaped_reward)
 
             return jax.lax.cond(
-                is_interact, _interact, lambda c, a: (c, a), carry, agent
+                is_interact, _interact, lambda c, a: (c, (a, 0.0)), carry, agent
             )
 
         carry = (grid, 0.0)
         xs = (new_agents, actions)
-        (new_grid, reward), new_agents = jax.lax.scan(_interact_wrapper, carry, xs)
+        (new_grid, reward), (new_agents, shaped_rewards) = jax.lax.scan(
+            _interact_wrapper, carry, xs
+        )
 
         # Cook pots:
         def _cook_wrapper(cell):
@@ -445,6 +459,7 @@ class OvercookedV2(MultiAgentEnv):
                 grid=new_grid,
             ),
             reward,
+            shaped_rewards,
         )
 
     def process_interact(
@@ -457,6 +472,8 @@ class OvercookedV2(MultiAgentEnv):
 
         inventory = agent.inventory
         fwd_pos = agent.get_fwd_pos()
+
+        shaped_reward = 0.0
 
         interact_cell = grid[fwd_pos.y, fwd_pos.x]
 
@@ -548,7 +565,7 @@ class OvercookedV2(MultiAgentEnv):
             * DELIVERY_REWARD
         )
 
-        return new_grid, new_agent, reward
+        return new_grid, new_agent, reward, shaped_reward
 
     def is_terminal(self, state: State) -> bool:
         """Check whether state is terminal."""
