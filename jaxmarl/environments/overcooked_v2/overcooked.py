@@ -529,7 +529,12 @@ class OvercookedV2(MultiAgentEnv):
         print("pot_full: ", pot_full)
 
         successful_pot_placement = pot_is_idle * inventory_is_ingredient * ~pot_full
-        shaped_reward += successful_pot_placement * SHAPED_REWARDS["PLACEMENT_IN_POT"]
+        ingredient_selector = inventory | (inventory << 1)
+        is_pot_placement_useful = successful_pot_placement * (
+            (interact_ingredients & ingredient_selector)
+            < (recipe & ingredient_selector)
+        )
+        shaped_reward += is_pot_placement_useful * SHAPED_REWARDS["PLACEMENT_IN_POT"]
 
         successful_drop = (
             object_is_wall * object_has_no_ingredients * ~inventory_is_empty
@@ -554,8 +559,11 @@ class OvercookedV2(MultiAgentEnv):
         successful_pot_start_cooking = (
             pot_is_idle * ~object_has_no_ingredients * inventory_is_empty
         )
+        pot_has_target_recipe = interact_ingredients == recipe
         shaped_reward += (
-            successful_pot_start_cooking * SHAPED_REWARDS["POT_START_COOKING"]
+            successful_pot_start_cooking
+            * pot_has_target_recipe
+            * SHAPED_REWARDS["POT_START_COOKING"]
         )
         new_extra = jax.lax.select(
             successful_pot_start_cooking,
@@ -581,13 +589,16 @@ class OvercookedV2(MultiAgentEnv):
             * DELIVERY_REWARD
         )
 
-        # Plate pickup reward:
+        # Plate pickup reward: number of plates in player hands < number ready/cooking/partially full pot
         inventory_is_plate = new_inventory == DynamicObject.PLATE
         successful_plate_pickup = successful_pickup * inventory_is_plate
         num_plates_in_inventory = jnp.sum(all_inventories == DynamicObject.PLATE)
-        num_nonempty_pots = jnp.sum((grid[:, :, 0] == StaticObject.POT) & (grid[:, :, 1] != 0))
+        num_nonempty_pots = jnp.sum(
+            (grid[:, :, 0] == StaticObject.POT) & (grid[:, :, 1] != 0)
+        )
         is_plate_pickup_useful = num_plates_in_inventory < num_nonempty_pots
-        no_plates_on_counters = jnp.sum(grid[:, :, 0] != StaticObject.PLATE_PILE)
+        # make sure there are no plates on counters to prevent reward hacking
+        no_plates_on_counters = jnp.sum(grid[:, :, 1] == DynamicObject.PLATE) == 0
         shaped_reward += (
             no_plates_on_counters
             * is_plate_pickup_useful
