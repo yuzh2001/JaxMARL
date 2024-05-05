@@ -55,7 +55,7 @@ ACTION_TO_DIRECTION = (
 SHAPED_REWARDS = {
     "PLACEMENT_IN_POT": 3,
     "PLATE_PICKUP": 3,
-    "SOUP_PICKUP": 5,
+    "DISH_PICKUP": 5,
 }
 
 
@@ -505,9 +505,12 @@ class OvercookedV2(MultiAgentEnv):
         )
         pot_is_idle = object_is_pot * ~pot_is_cooking * ~pot_is_cooked
 
+        successful_dish_pickup = pot_is_cooked * inventory_is_plate
+        shaped_reward += successful_dish_pickup * SHAPED_REWARDS["DISH_PICKUP"]
+
         successful_pickup = (
             object_is_pile * inventory_is_empty
-            + pot_is_cooked * inventory_is_plate
+            + successful_dish_pickup
             + object_is_wall * ~object_has_no_ingredients * inventory_is_empty
         )
 
@@ -518,11 +521,12 @@ class OvercookedV2(MultiAgentEnv):
         pot_full = jnp.array(DynamicObject.ingredient_count(interact_ingredients) == 3)
         print("pot_full: ", pot_full)
 
-        print("test", object_is_wall, object_has_no_ingredients, inventory_is_empty)
-        print("test2", pot_is_idle, inventory_is_ingredient, ~pot_full)
+        successful_pot_placement = pot_is_idle * inventory_is_ingredient * ~pot_full
+        shaped_reward += successful_pot_placement * SHAPED_REWARDS["PLACEMENT_IN_POT"]
+
         successful_drop = (
             object_is_wall * object_has_no_ingredients * ~inventory_is_empty
-            + pot_is_idle * inventory_is_ingredient * ~pot_full
+            + successful_pot_placement
         )
         successful_delivery = object_is_goal * inventory_is_dish
         no_effect = ~successful_pickup * ~successful_drop * ~successful_delivery
@@ -548,8 +552,7 @@ class OvercookedV2(MultiAgentEnv):
         new_cell = jnp.array([interact_item, new_ingredients, new_extra])
 
         new_grid = grid.at[fwd_pos.y, fwd_pos.x].set(new_cell)
-        print(successful_pickup, successful_drop, successful_delivery, no_effect)
-        print(pile_ingredient, merged_ingredients, pile_ingredient + merged_ingredients)
+
         new_inventory = (
             successful_pickup * (pile_ingredient + merged_ingredients)
             + no_effect * inventory
