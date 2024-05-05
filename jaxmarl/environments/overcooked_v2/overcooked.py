@@ -425,7 +425,9 @@ class OvercookedV2(MultiAgentEnv):
                 print("interact: ", agent.pos, agent.dir)
 
                 new_grid, new_agent, interact_reward, shaped_reward = (
-                    self.process_interact(grid, agent, state.recipe)
+                    self.process_interact(
+                        grid, agent, new_agents.inventory, state.recipe
+                    )
                 )
 
                 carry = (new_grid, reward + interact_reward)
@@ -470,6 +472,7 @@ class OvercookedV2(MultiAgentEnv):
         self,
         grid: chex.Array,
         agent: Agent,
+        all_inventories: jnp.ndarray,
         recipe: int,
     ):
         """Assume agent took interact actions. Result depends on what agent is facing and what it is holding."""
@@ -548,8 +551,12 @@ class OvercookedV2(MultiAgentEnv):
             successful_drop * merged_ingredients + no_effect * interact_ingredients
         )
 
-        successful_pot_start_cooking = pot_is_idle * ~object_has_no_ingredients * inventory_is_empty
-        shaped_reward += successful_pot_start_cooking * SHAPED_REWARDS["POT_START_COOKING"]
+        successful_pot_start_cooking = (
+            pot_is_idle * ~object_has_no_ingredients * inventory_is_empty
+        )
+        shaped_reward += (
+            successful_pot_start_cooking * SHAPED_REWARDS["POT_START_COOKING"]
+        )
         new_extra = jax.lax.select(
             successful_pot_start_cooking,
             POT_COOK_TIME,
@@ -572,6 +579,20 @@ class OvercookedV2(MultiAgentEnv):
         reward = (
             jnp.array(successful_delivery & is_correct_recipe, dtype=float)
             * DELIVERY_REWARD
+        )
+
+        # Plate pickup reward:
+        inventory_is_plate = new_inventory == DynamicObject.PLATE
+        successful_plate_pickup = successful_pickup * inventory_is_plate
+        num_plates_in_inventory = jnp.sum(all_inventories == DynamicObject.PLATE)
+        num_nonempty_pots = jnp.sum((grid[:, :, 0] == StaticObject.POT) & (grid[:, :, 1] != 0))
+        is_plate_pickup_useful = num_plates_in_inventory < num_nonempty_pots
+        no_plates_on_counters = jnp.sum(grid[:, :, 0] != StaticObject.PLATE_PILE)
+        shaped_reward += (
+            no_plates_on_counters
+            * is_plate_pickup_useful
+            * successful_plate_pickup
+            * SHAPED_REWARDS["PLATE_PICKUP"]
         )
 
         return new_grid, new_agent, reward, shaped_reward
