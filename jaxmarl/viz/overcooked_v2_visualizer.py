@@ -321,37 +321,10 @@ class OvercookedV2Visualizer:
         """
         Render a tile and cache the result
         """
-        # # Hash map lookup key for the cache
-        # if obj is not None and obj[0] == OBJECT_TO_INDEX["agent"]:
-        #     # Get inventory of this specific agent
-        #     if agent_inv is not None:
-        #         color_idx = obj[1]
-        #         agent_inv = agent_inv[COLOR_TO_AGENT_INDEX[color_idx]]
-        #         agent_inv = np.array([agent_inv, -1, 0])
+        key = (*obj.tolist(), highlight, tile_size)
 
-        #     if agent_dir_idx is not None:
-        #         obj = np.array(obj)
-
-        #         # TODO: Fix this for multiagents. Currently the orientation of other agents is wrong
-        #         if len(agent_dir_idx) == 1:
-        #             # Hacky way of making agent views orientations consistent with global view
-        #             obj[-1] = agent_dir_idx[0]
-
-        # no_object = obj is None or (
-        #     obj[0] in [OBJECT_TO_INDEX["empty"], OBJECT_TO_INDEX["unseen"]]
-        #     and obj[2] == 0
-        # )
-
-        # if not no_object:
-        #     if agent_inv is not None and obj[0] == OBJECT_TO_INDEX["agent"]:
-        #         key = (*obj, *agent_inv, highlight, tile_size)
-        #     else:
-        #         key = (*obj, highlight, tile_size)
-        # else:
-        #     key = (obj, highlight, tile_size)
-
-        # if key in cls.tile_cache:
-        #     return cls.tile_cache[key]
+        if key in cls.tile_cache:
+            return cls.tile_cache[key]
 
         img = np.zeros(
             shape=(tile_size * subdivs, tile_size * subdivs, 3), dtype=np.uint8
@@ -365,11 +338,7 @@ class OvercookedV2Visualizer:
             img, rendering.point_in_rect(0, 1, 0, 0.031), (100, 100, 100)
         )
 
-        # if not no_object:
         OvercookedV2Visualizer._render_cell(obj, img)
-        # # render inventory
-        # if agent_inv is not None and obj[0] == OBJECT_TO_INDEX["agent"]:
-        #     OvercookedV2Visualizer._render_inv(agent_inv, img)
 
         if highlight:
             rendering.highlight_img(img)
@@ -378,7 +347,7 @@ class OvercookedV2Visualizer:
         img = rendering.downsample(img, subdivs)
 
         # Cache the rendered tile
-        # cls.tile_cache[key] = img
+        cls.tile_cache[key] = img
 
         return img
 
