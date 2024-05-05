@@ -140,7 +140,7 @@ def make_train(config):
     )
 
     env = LogWrapper(env, replace_info=False)
-    
+
     def linear_schedule(count):
         frac = (
             1.0
@@ -148,6 +148,10 @@ def make_train(config):
             / config["NUM_UPDATES"]
         )
         return config["LR"] * frac
+
+    rew_shaping_anneal = optax.linear_schedule(
+        init_value=1.0, end_value=0.0, transition_steps=config["REW_SHAPING_HORIZON"]
+    )
 
     def train(rng):
 
@@ -207,6 +211,26 @@ def make_train(config):
                 obsv, env_state, reward, done, info = jax.vmap(
                     env.step, in_axes=(0, 0, 0)
                 )(rng_step, env_state, env_act)
+                original_reward = jnp.array([reward[a] for a in env.agents])
+
+                current_timestep = (
+                    update_step * config["NUM_STEPS"] * config["NUM_ENVS"]
+                )
+                anneal_factor = rew_shaping_anneal(current_timestep)
+                reward = jax.tree_util.tree_map(
+                    lambda x, y: x + y * anneal_factor, reward, info["shaped_reward"]
+                )
+
+                shaped_reward = jnp.array(
+                    [info["shaped_reward"][a] for a in env.agents]
+                )
+                combined_reward = jnp.array([reward[a] for a in env.agents])
+
+                info["shaped_reward"] = shaped_reward
+                info["original_reward"] = original_reward
+                info["anneal_factor"] = jnp.full_like(shaped_reward, anneal_factor)
+                info["combined_reward"] = combined_reward
+
                 info = jax.tree_util.tree_map(
                     lambda x: x.reshape((config["NUM_ACTORS"])), info
                 )
@@ -342,13 +366,12 @@ def make_train(config):
             rng = update_state[-1]
 
             def callback(metric):
-                wandb.log(
-                    metric
-                )
+                wandb.log(metric)
+
             update_step = update_step + 1
             metric = jax.tree_util.tree_map(lambda x: x.mean(), metric)
             metric["update_step"] = update_step
-            metric["env_step"] = update_step*config["NUM_STEPS"]*config["NUM_ENVS"]
+            metric["env_step"] = update_step * config["NUM_STEPS"] * config["NUM_ENVS"]
             jax.debug.callback(callback, metric)
 
             runner_state = (train_state, env_state, last_obs, update_step, rng)

@@ -85,7 +85,7 @@ class OvercookedV2(MultiAgentEnv):
 
     def __init__(
         self,
-        layout=layouts["counter_circuit"],
+        layout=layouts["cramped_room"],
         # random_reset: bool = False,
         max_steps: int = 400,
         observation_type: ObservationType = ObservationType.LEGACY,
