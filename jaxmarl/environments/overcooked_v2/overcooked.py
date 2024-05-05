@@ -54,8 +54,9 @@ ACTION_TO_DIRECTION = (
 
 SHAPED_REWARDS = {
     "PLACEMENT_IN_POT": 3,
-    "PLATE_PICKUP": 3,
+    "POT_START_COOKING": 5,
     "DISH_PICKUP": 5,
+    "PLATE_PICKUP": 3,
 }
 
 
@@ -547,8 +548,10 @@ class OvercookedV2(MultiAgentEnv):
             successful_drop * merged_ingredients + no_effect * interact_ingredients
         )
 
+        successful_pot_start_cooking = pot_is_idle * ~object_has_no_ingredients * inventory_is_empty
+        shaped_reward += successful_pot_start_cooking * SHAPED_REWARDS["POT_START_COOKING"]
         new_extra = jax.lax.select(
-            pot_is_idle * ~object_has_no_ingredients * inventory_is_empty,
+            successful_pot_start_cooking,
             POT_COOK_TIME,
             interact_extra,
         )
