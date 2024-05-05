@@ -395,20 +395,23 @@ class OvercookedV2(MultiAgentEnv):
         new_agents = new_agents.replace(pos=_masked_positions(mask))
 
         # Prevent swapping:
-        # def _compute_swap_mask(new_positions, original_positions):
-        #     new_pos_expanded = jnp.expand_dims(new_positions, axis=1)
-        #     original_pos_expanded = jnp.expand_dims(original_positions, axis=0)
+        def _compute_swapped_agents(original_positions, new_positions):
+            original_positions = original_positions.to_array()
+            new_positions = new_positions.to_array()
 
-        #     swap_mask = (new_pos_expanded == original_pos_expanded).all(axis=-1)
-        #     swap_mask = jnp.fill_diagonal(swap_mask, False)
+            original_pos_expanded = jnp.expand_dims(original_positions, axis=0)
+            new_pos_expanded = jnp.expand_dims(new_positions, axis=1)
 
-        #     swap_pairs = jnp.logical_and(swap_mask, swap_mask.T)
+            swap_mask = (original_pos_expanded == new_pos_expanded).all(axis=-1)
+            swap_mask = jnp.fill_diagonal(swap_mask, False, inplace=False)
 
-        #     swapped_agents = jnp.any(swap_pairs, axis=0)
-        #     return ~swapped_agents
+            swap_pairs = jnp.logical_and(swap_mask, swap_mask.T)
 
-        # swap_mask = _compute_swap_mask(new_agents.pos, state.agents.pos)
-        # new_agents = new_agents.replace(pos=_masked_positions(swap_mask))
+            swapped_agents = jnp.any(swap_pairs, axis=0)
+            return swapped_agents
+
+        swap_mask = _compute_swapped_agents(state.agents.pos, new_agents.pos)
+        new_agents = new_agents.replace(pos=_masked_positions(swap_mask))
 
         # Interact action:
         def _interact_wrapper(carry, x):

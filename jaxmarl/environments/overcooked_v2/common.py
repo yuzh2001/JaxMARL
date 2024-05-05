@@ -117,6 +117,9 @@ class Position:
         clipped_y = jnp.clip(new_pos.y, 0, height - 1)
         return Position(x=clipped_x, y=clipped_y)
 
+    def to_array(self):
+        return jnp.stack([self.x, self.y], axis=-1)
+
 
 @chex.dataclass
 class Agent:
