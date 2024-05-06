@@ -50,7 +50,7 @@ class DynamicObject(IntEnum):
 
     @staticmethod
     def ingredient_count(obj):
-        initial_val = (obj >> 2, 0)
+        initial_val = (obj >> 2, jnp.array(0))
 
         def _count_ingredients(x):
             obj, count = x

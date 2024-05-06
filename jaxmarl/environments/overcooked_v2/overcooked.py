@@ -78,7 +78,7 @@ class State:
 
 URGENCY_CUTOFF = 40  # When this many time steps remain, the urgency layer is flipped on
 DELIVERY_REWARD = 20
-POT_COOK_TIME = 5  # 20  # Time it takes to cook a pot of onions
+POT_COOK_TIME = 20  # Time it takes to cook a pot
 
 
 class OvercookedV2(MultiAgentEnv):
@@ -109,7 +109,6 @@ class OvercookedV2(MultiAgentEnv):
 
         self.obs_shape = self._get_obs_shape(observation_type)
 
-        # self.random_reset = random_reset
         self.max_steps = max_steps
 
     def step_env(
@@ -299,6 +298,20 @@ class OvercookedV2(MultiAgentEnv):
             ),
         ]
 
+        # all_agent_layer = (
+        #     jnp.zeros((height, width, 5), dtype=jnp.uint8)
+        #     .at[state.agents.pos.y, state.agents.pos.x, 0]
+        #     .set(1)
+        #     .at[state.agents.pos.y, state.agents.pos.x, state.agents.dir + 1]
+        #     .set(1)
+        # )
+        # all_agent_layers = [all_agent_layer[:, :, i] for i in range(5)]
+        # agent_self_layers = [
+        #     jnp.zeros((height, width), dtype=jnp.uint8) for _ in range(5)
+        # ]
+
+        # agent_layers = agent_self_layers + all_agent_layers
+
         all_agent_layer = jnp.zeros((height, width), dtype=jnp.uint8)
         print(state.agents.pos)
         print(state.agents.dir)
@@ -310,10 +323,6 @@ class OvercookedV2(MultiAgentEnv):
         agent_layers = [
             agent_self_layer,
             all_agent_layer,
-            # all_agent_layer[:, :, 0],
-            # all_agent_layer[:, :, 1],
-            # all_agent_layer[:, :, 2],
-            # all_agent_layer[:, :, 3],
         ]
 
         all_layers = agent_layers + static_layers + ingredients_layers + extra_layers
@@ -326,6 +335,15 @@ class OvercookedV2(MultiAgentEnv):
         def _agent_obs(agent):
             pos = agent.pos
             return obs.at[pos.y, pos.x, 0].set(1)
+            # direction = agent.dir
+            # self_layers = (
+            #     jnp.zeros((height, width, 5), dtype=jnp.uint8)
+            #     .at[pos.y, pos.x, 0]
+            #     .set(1)
+            #     .at[pos.y, pos.x, direction + 1]
+            #     .set(1)
+            # )
+            # return obs.at[:, :, :5].set(self_layers).at[:, :, 5:10].add(-self_layers)
 
         all_obs = jax.vmap(_agent_obs)(state.agents)
 
@@ -442,6 +460,8 @@ class OvercookedV2(MultiAgentEnv):
         (new_grid, reward), (new_agents, shaped_rewards) = jax.lax.scan(
             _interact_wrapper, carry, xs
         )
+        # shaped_rewards = jnp.full_like(shaped_rewards, jnp.sum(shaped_rewards))
+        # shaped_rewards = jnp.zeros_like(shaped_rewards)
 
         # Cook pots:
         def _cook_wrapper(cell):
@@ -480,31 +500,34 @@ class OvercookedV2(MultiAgentEnv):
         inventory = agent.inventory
         fwd_pos = agent.get_fwd_pos()
 
-        shaped_reward = 0.0
+        shaped_reward = jnp.array(0, dtype=float)
 
         interact_cell = grid[fwd_pos.y, fwd_pos.x]
 
         interact_item = interact_cell[0]
         interact_ingredients = interact_cell[1]
         interact_extra = interact_cell[2]
+        plated_recipe = recipe | DynamicObject.PLATE | DynamicObject.COOKED
 
         # Booleans depending on what the object is
-        object_is_plate_pile = jnp.array(interact_item == StaticObject.PLATE_PILE)
-        object_is_ingredient_pile = jnp.array(
-            StaticObject.is_ingredient_pile(interact_item)
-        )
-        object_is_pile = object_is_plate_pile | object_is_ingredient_pile
-        object_is_pot = jnp.array(interact_item == StaticObject.POT)
-        object_is_goal = jnp.array(interact_item == StaticObject.GOAL)
-        object_is_wall = jnp.array(interact_item == StaticObject.WALL)
+        object_is_plate_pile = interact_item == StaticObject.PLATE_PILE
+        object_is_ingredient_pile = StaticObject.is_ingredient_pile(interact_item)
 
-        object_has_no_ingredients = jnp.array(interact_ingredients == 0)
+        object_is_pile = object_is_plate_pile | object_is_ingredient_pile
+        object_is_pot = interact_item == StaticObject.POT
+        object_is_goal = interact_item == StaticObject.GOAL
+        object_is_wall = interact_item == StaticObject.WALL
+
+        object_has_no_ingredients = interact_ingredients == 0
 
         inventory_is_empty = inventory == 0
         inventory_is_ingredient = DynamicObject.is_ingredient(inventory)
         print("inventory_is_ingredient: ", inventory_is_ingredient)
         inventory_is_plate = inventory == DynamicObject.PLATE
         inventory_is_dish = (inventory & DynamicObject.COOKED) != 0
+
+        merged_ingredients = interact_ingredients + inventory
+        print("merged_ingredients: ", merged_ingredients)
 
         pot_is_cooking = object_is_pot * (interact_extra > 0)
         pot_is_cooked = object_is_pot * (
@@ -513,7 +536,10 @@ class OvercookedV2(MultiAgentEnv):
         pot_is_idle = object_is_pot * ~pot_is_cooking * ~pot_is_cooked
 
         successful_dish_pickup = pot_is_cooked * inventory_is_plate
-        shaped_reward += successful_dish_pickup * SHAPED_REWARDS["DISH_PICKUP"]
+        is_dish_pickup_useful = successful_dish_pickup * (
+            merged_ingredients == plated_recipe
+        )
+        shaped_reward += is_dish_pickup_useful * SHAPED_REWARDS["DISH_PICKUP"]
 
         successful_pickup = (
             object_is_pile * inventory_is_empty
@@ -525,7 +551,7 @@ class OvercookedV2(MultiAgentEnv):
         print("object_is_pile: ", object_is_pile)
         print("inventory_is_empty: ", inventory_is_empty)
 
-        pot_full = jnp.array(DynamicObject.ingredient_count(interact_ingredients) == 3)
+        pot_full = DynamicObject.ingredient_count(interact_ingredients) == 3
         print("pot_full: ", pot_full)
 
         successful_pot_placement = pot_is_idle * inventory_is_ingredient * ~pot_full
@@ -543,9 +569,6 @@ class OvercookedV2(MultiAgentEnv):
         successful_delivery = object_is_goal * inventory_is_dish
         no_effect = ~successful_pickup * ~successful_drop * ~successful_delivery
 
-        merged_ingredients = interact_ingredients + inventory
-        print("merged_ingredients: ", merged_ingredients)
-
         pile_ingredient = (
             object_is_plate_pile * DynamicObject.PLATE
             + object_is_ingredient_pile * StaticObject.get_ingredient(interact_item)
@@ -559,11 +582,11 @@ class OvercookedV2(MultiAgentEnv):
         successful_pot_start_cooking = (
             pot_is_idle * ~object_has_no_ingredients * inventory_is_empty
         )
-        pot_has_target_recipe = interact_ingredients == recipe
+        is_pot_start_cooking_useful = successful_pot_start_cooking * (
+            interact_ingredients == recipe
+        )
         shaped_reward += (
-            successful_pot_start_cooking
-            * pot_has_target_recipe
-            * SHAPED_REWARDS["POT_START_COOKING"]
+            is_pot_start_cooking_useful * SHAPED_REWARDS["POT_START_COOKING"]
         )
         new_extra = jax.lax.select(
             successful_pot_start_cooking,
@@ -581,7 +604,6 @@ class OvercookedV2(MultiAgentEnv):
         print("new_inventory: ", new_inventory)
         new_agent = agent.replace(inventory=new_inventory)
 
-        plated_recipe = recipe | DynamicObject.PLATE | DynamicObject.COOKED
         is_correct_recipe = inventory == plated_recipe
         print("is_correct_recipe: ", is_correct_recipe)
         reward = (
