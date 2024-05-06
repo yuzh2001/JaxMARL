@@ -536,10 +536,12 @@ class OvercookedV2(MultiAgentEnv):
         pot_is_idle = object_is_pot * ~pot_is_cooking * ~pot_is_cooked
 
         successful_dish_pickup = pot_is_cooked * inventory_is_plate
-        is_dish_pickup_useful = successful_dish_pickup * (
-            merged_ingredients == plated_recipe
+        is_dish_pickup_useful = merged_ingredients == plated_recipe
+        shaped_reward += (
+            successful_dish_pickup
+            * is_dish_pickup_useful
+            * SHAPED_REWARDS["DISH_PICKUP"]
         )
-        shaped_reward += is_dish_pickup_useful * SHAPED_REWARDS["DISH_PICKUP"]
 
         successful_pickup = (
             object_is_pile * inventory_is_empty
@@ -556,11 +558,19 @@ class OvercookedV2(MultiAgentEnv):
 
         successful_pot_placement = pot_is_idle * inventory_is_ingredient * ~pot_full
         ingredient_selector = inventory | (inventory << 1)
-        is_pot_placement_useful = successful_pot_placement * (
-            (interact_ingredients & ingredient_selector)
-            < (recipe & ingredient_selector)
+        is_pot_placement_useful = (interact_ingredients & ingredient_selector) < (
+            recipe & ingredient_selector
         )
-        shaped_reward += is_pot_placement_useful * SHAPED_REWARDS["PLACEMENT_IN_POT"]
+        shaped_reward += (
+            successful_pot_placement
+            * is_pot_placement_useful
+            # * jax.lax.select(
+            #     is_pot_placement_useful,
+            #     1,
+            #     -1,
+            # )
+            * SHAPED_REWARDS["PLACEMENT_IN_POT"]
+        )
 
         successful_drop = (
             object_is_wall * object_has_no_ingredients * ~inventory_is_empty
@@ -582,11 +592,16 @@ class OvercookedV2(MultiAgentEnv):
         successful_pot_start_cooking = (
             pot_is_idle * ~object_has_no_ingredients * inventory_is_empty
         )
-        is_pot_start_cooking_useful = successful_pot_start_cooking * (
-            interact_ingredients == recipe
-        )
+        is_pot_start_cooking_useful = interact_ingredients == recipe
         shaped_reward += (
-            is_pot_start_cooking_useful * SHAPED_REWARDS["POT_START_COOKING"]
+            successful_pot_start_cooking
+            * is_pot_start_cooking_useful
+            # * jax.lax.select(
+            #     is_pot_start_cooking_useful,
+            #     1,
+            #     -1,
+            # )
+            * SHAPED_REWARDS["POT_START_COOKING"]
         )
         new_extra = jax.lax.select(
             successful_pot_start_cooking,

@@ -11,7 +11,7 @@
 "VF_COEF": 0.5
 "MAX_GRAD_NORM": 0.5
 "REW_SHAPING_HORIZON": 2.5e6
-"ACTIVATION": "tanh"
+"ACTIVATION": "relu"
 "ENV_NAME": "overcooked_v2"
 "ENV_KWARGS": 
   "layout" : "cramped_room_v2"

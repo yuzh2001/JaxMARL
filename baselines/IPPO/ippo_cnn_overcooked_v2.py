@@ -25,6 +25,46 @@ import wandb
 import matplotlib.pyplot as plt
 
 
+class CNN(nn.Module):
+    activation: str = "tanh"
+
+    @nn.compact
+    def __call__(self, x):
+        if self.activation == "relu":
+            activation = nn.relu
+        else:
+            activation = nn.tanh
+        x = nn.Conv(
+            features=32,
+            kernel_size=(5, 5),
+            kernel_init=orthogonal(np.sqrt(2)),
+            bias_init=constant(0.0),
+        )(x)
+        x = activation(x)
+        x = nn.Conv(
+            features=32,
+            kernel_size=(3, 3),
+            kernel_init=orthogonal(np.sqrt(2)),
+            bias_init=constant(0.0),
+        )(x)
+        x = activation(x)
+        x = nn.Conv(
+            features=32,
+            kernel_size=(3, 3),
+            kernel_init=orthogonal(np.sqrt(2)),
+            bias_init=constant(0.0),
+        )(x)
+        x = activation(x)
+        x = x.reshape((x.shape[0], -1))  # Flatten
+
+        x = nn.Dense(
+            features=64, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+        )(x)
+        x = activation(x)
+
+        return x
+
+
 class ActorCritic(nn.Module):
     action_dim: Sequence[int]
     activation: str = "tanh"
@@ -36,26 +76,20 @@ class ActorCritic(nn.Module):
         else:
             activation = nn.tanh
 
+        embedding = CNN(self.activation)(x)
+
         actor_mean = nn.Dense(
-            128, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
-        )(x)
-        actor_mean = activation(actor_mean)
-        actor_mean = nn.Dense(
-            128, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
-        )(actor_mean)
+            64, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+        )(embedding)
         actor_mean = activation(actor_mean)
         actor_mean = nn.Dense(
             self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
-        )(actor_mean)
+        )(embedding)
         pi = distrax.Categorical(logits=actor_mean)
 
         critic = nn.Dense(
-            128, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
-        )(x)
-        critic = activation(critic)
-        critic = nn.Dense(
-            128, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
-        )(critic)
+            64, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+        )(embedding)
         critic = activation(critic)
         critic = nn.Dense(1, kernel_init=orthogonal(1.0), bias_init=constant(0.0))(
             critic
@@ -83,8 +117,7 @@ def get_rollout(train_state, config):
     key = jax.random.PRNGKey(0)
     key, key_r, key_a = jax.random.split(key, 3)
 
-    init_x = jnp.zeros(env.observation_space().shape)
-    init_x = init_x.flatten()
+    init_x = jnp.zeros((1, *env.observation_space().shape))
 
     network.init(key_a, init_x)
     network_params = train_state.params
@@ -92,10 +125,9 @@ def get_rollout(train_state, config):
     done = False
 
     obs, state = env.reset(key_r)
-
-    @jax.jit
-    def _perform_step(key, state, obs):
-        key_a0, key_a1, key_s = jax.random.split(key, 3)
+    state_seq = [state]
+    while not done:
+        key, key_a0, key_a1, key_s = jax.random.split(key, 4)
 
         # obs_batch = batchify(obs, env.agents, config["NUM_ACTORS"])
         # breakpoint()
@@ -113,15 +145,6 @@ def get_rollout(train_state, config):
 
         # STEP ENV
         obs, state, reward, done, info = env.step(key_s, state, actions)
-
-        return obs, state, reward, done, info
-
-
-    state_seq = [state]
-    while not done:
-        key, subkey = jax.random.split(key)
-
-        obs, state, reward, done, info = _perform_step(subkey, state, obs)
         done = done["__all__"]
 
         state_seq.append(state)
@@ -169,9 +192,7 @@ def make_train(config):
         # INIT NETWORK
         network = ActorCritic(env.action_space().n, activation=config["ACTIVATION"])
         rng, _rng = jax.random.split(rng)
-        init_x = jnp.zeros(env.observation_space().shape)
-
-        init_x = init_x.flatten()
+        init_x = jnp.zeros((1, *env.observation_space().shape))
 
         network_params = network.init(_rng, init_x)
         if config["ANNEAL_LR"]:
@@ -204,7 +225,9 @@ def make_train(config):
                 # SELECT ACTION
                 rng, _rng = jax.random.split(rng)
 
-                obs_batch = batchify(last_obs, env.agents, config["NUM_ACTORS"])
+                obs_batch = jnp.stack([last_obs[a] for a in env.agents]).reshape(
+                    -1, *env.observation_space().shape
+                )
 
                 pi, value = network.apply(train_state.params, obs_batch)
                 action = pi.sample(seed=_rng)
@@ -263,7 +286,9 @@ def make_train(config):
 
             # CALCULATE ADVANTAGE
             train_state, env_state, last_obs, update_step, rng = runner_state
-            last_obs_batch = batchify(last_obs, env.agents, config["NUM_ACTORS"])
+            last_obs_batch = jnp.stack([last_obs[a] for a in env.agents]).reshape(
+                -1, *env.observation_space().shape
+            )
             _, last_val = network.apply(train_state.params, last_obs_batch)
 
             def _calculate_gae(traj_batch, last_val):
@@ -399,7 +424,7 @@ def make_train(config):
 
 
 @hydra.main(
-    version_base=None, config_path="config", config_name="ippo_ff_overcooked_v2"
+    version_base=None, config_path="config", config_name="ippo_cnn_overcooked_v2"
 )
 def main(config):
     config = OmegaConf.to_container(config)
@@ -411,7 +436,7 @@ def main(config):
     wandb.init(
         entity=config["ENTITY"],
         project=config["PROJECT"],
-        tags=["IPPO", "FF", "OvercookedV2"],
+        tags=["IPPO", "CNN", "OvercookedV2"],
         config=config,
         mode=config["WANDB_MODE"],
         name=f"ippo_ff_overcooked_v2_{layout_name}",
@@ -451,12 +476,12 @@ def main(config):
 
     print("Final reward mean: ", reward_mean[-1])
 
-    # animate first seed
-    train_state = jax.tree_util.tree_map(lambda x: x[0], out["runner_state"][0])
-    state_seq = get_rollout(train_state, config)
-    viz = OvercookedV2Visualizer()
-    # agent_view_size is hardcoded as it determines the padding around the layout.
-    viz.animate(state_seq, agent_view_size=5, filename=f"{filename}.gif")
+    # # animate first seed
+    # train_state = jax.tree_util.tree_map(lambda x: x[0], out["runner_state"][0])
+    # state_seq = get_rollout(train_state, config)
+    # viz = OvercookedV2Visualizer()
+    # # agent_view_size is hardcoded as it determines the padding around the layout.
+    # viz.animate(state_seq, agent_view_size=5, filename=f"{filename}.gif")
 
 
 if __name__ == "__main__":
