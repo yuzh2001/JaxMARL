@@ -204,7 +204,7 @@ class OvercookedV2(MultiAgentEnv):
     ) -> Tuple[int]:
         if obs_type == ObservationType.LEGACY:
             num_ingredients = self.layout.num_ingredients
-            num_layers = 10 + 2 * num_ingredients
+            num_layers = 18 + 2 * num_ingredients
             return (self.height, self.width, num_layers)
         elif obs_type == ObservationType.ENCODED:
             return (self.height, self.width, 3)
@@ -298,32 +298,32 @@ class OvercookedV2(MultiAgentEnv):
             ),
         ]
 
-        # all_agent_layer = (
-        #     jnp.zeros((height, width, 5), dtype=jnp.uint8)
-        #     .at[state.agents.pos.y, state.agents.pos.x, 0]
-        #     .set(1)
-        #     .at[state.agents.pos.y, state.agents.pos.x, state.agents.dir + 1]
-        #     .set(1)
-        # )
-        # all_agent_layers = [all_agent_layer[:, :, i] for i in range(5)]
-        # agent_self_layers = [
-        #     jnp.zeros((height, width), dtype=jnp.uint8) for _ in range(5)
-        # ]
-
-        # agent_layers = agent_self_layers + all_agent_layers
-
-        all_agent_layer = jnp.zeros((height, width), dtype=jnp.uint8)
-        print(state.agents.pos)
-        print(state.agents.dir)
-        all_agent_layer = all_agent_layer.at[
-            state.agents.pos.y, state.agents.pos.x
-        ].set(state.agents.dir)
-        agent_self_layer = jnp.zeros((height, width), dtype=jnp.uint8)
-
-        agent_layers = [
-            agent_self_layer,
-            all_agent_layer,
+        all_agent_layer = (
+            jnp.zeros((height, width, 5), dtype=jnp.uint8)
+            .at[state.agents.pos.y, state.agents.pos.x, 0]
+            .set(1)
+            .at[state.agents.pos.y, state.agents.pos.x, state.agents.dir + 1]
+            .set(1)
+        )
+        all_agent_layers = [all_agent_layer[:, :, i] for i in range(5)]
+        agent_self_layers = [
+            jnp.zeros((height, width), dtype=jnp.uint8) for _ in range(5)
         ]
+
+        agent_layers = agent_self_layers + all_agent_layers
+
+        # all_agent_layer = jnp.zeros((height, width), dtype=jnp.uint8)
+        # print(state.agents.pos)
+        # print(state.agents.dir)
+        # all_agent_layer = all_agent_layer.at[
+        #     state.agents.pos.y, state.agents.pos.x
+        # ].set(state.agents.dir)
+        # agent_self_layer = jnp.zeros((height, width), dtype=jnp.uint8)
+
+        # agent_layers = [
+        #     agent_self_layer,
+        #     all_agent_layer,
+        # ]
 
         all_layers = agent_layers + static_layers + ingredients_layers + extra_layers
 
@@ -334,16 +334,16 @@ class OvercookedV2(MultiAgentEnv):
 
         def _agent_obs(agent):
             pos = agent.pos
-            return obs.at[pos.y, pos.x, 0].set(1)
-            # direction = agent.dir
-            # self_layers = (
-            #     jnp.zeros((height, width, 5), dtype=jnp.uint8)
-            #     .at[pos.y, pos.x, 0]
-            #     .set(1)
-            #     .at[pos.y, pos.x, direction + 1]
-            #     .set(1)
-            # )
-            # return obs.at[:, :, :5].set(self_layers).at[:, :, 5:10].add(-self_layers)
+            # return obs.at[pos.y, pos.x, 0].set(1)
+            direction = agent.dir
+            self_layers = (
+                jnp.zeros((height, width, 5), dtype=jnp.uint8)
+                .at[pos.y, pos.x, 0]
+                .set(1)
+                .at[pos.y, pos.x, direction + 1]
+                .set(1)
+            )
+            return obs.at[:, :, :5].set(self_layers).at[:, :, 5:10].add(-self_layers)
 
         all_obs = jax.vmap(_agent_obs)(state.agents)
 
