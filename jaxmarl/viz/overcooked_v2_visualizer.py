@@ -1,19 +1,12 @@
 import math
-
 import numpy as np
-
 from jaxmarl.viz.window import Window
 import jaxmarl.viz.grid_rendering as rendering
 import jax
-
-# from jaxmarl.environments.overcooked_v2.common import OBJECT_TO_INDEX, COLOR_TO_INDEX, COLORS
 from jaxmarl.environments.overcooked_v2.common import StaticObject, DynamicObject
 from jaxmarl.environments.overcooked_v2.overcooked import POT_COOK_TIME
 
-# INDEX_TO_COLOR = [k for k,v in COLOR_TO_INDEX.items()]
 TILE_PIXELS = 32
-
-COLOR_TO_AGENT_INDEX = {0: 0, 2: 1}  # Hardcoded. Red is first, blue is second
 
 COLORS = {
     "red": np.array([255, 0, 0]),
@@ -62,21 +55,23 @@ class OvercookedV2Visualizer:
         self._lazy_init_window()
         self.window.show(block=block)
 
-    def render(self, agent_view_size, state, highlight=True, tile_size=TILE_PIXELS):
+    def render(self, state, agent_view_size=None, tile_size=TILE_PIXELS):
         """Method for rendering the state in a window. Esp. useful for interactive mode."""
         self._lazy_init_window()
 
-        img = self._render_state(agent_view_size, state, highlight, tile_size)
+        img = self._render_state(
+            state, agent_view_size=agent_view_size, tile_size=tile_size
+        )
 
         self.window.show_img(img)
 
-    def animate(self, state_seq, agent_view_size, filename="animation.gif"):
+    def animate(self, state_seq, agent_view_size=None, filename="animation.gif"):
         """Animate a gif give a state sequence and save if to file."""
         import imageio
 
         def get_frame(state):
             frame = OvercookedV2Visualizer._render_state(
-                agent_view_size, state, highlight=False
+                state, agent_view_size=agent_view_size
             )
             return frame
 
@@ -84,10 +79,8 @@ class OvercookedV2Visualizer:
 
         imageio.mimsave(filename, frame_seq, "GIF", duration=0.5)
 
-    @classmethod
-    def _render_state(
-        cls, agent_view_size, state, highlight=True, tile_size=TILE_PIXELS
-    ):
+    @staticmethod
+    def _render_state(state, agent_view_size=None, tile_size=TILE_PIXELS):
         """
         Render the state
         """
@@ -121,8 +114,8 @@ class OvercookedV2Visualizer:
         )
         return img
 
-    @classmethod
-    def _render_cell(cls, cell, img):
+    @staticmethod
+    def _render_cell(cell, img):
         static_object = cell[0]
         ingredients = cell[1]
         extra_info = cell[2]
@@ -218,8 +211,8 @@ class OvercookedV2Visualizer:
                     f"Rendering object at index {static_object} is currently unsupported."
                 )
 
-    @classmethod
-    def _render_counter(cls, ingredients, img):
+    @staticmethod
+    def _render_counter(ingredients, img):
         if ingredients & DynamicObject.PLATE:
             plate_fn = rendering.point_in_circle(0.5, 0.5, 0.3)
             rendering.fill_coords(img, plate_fn, COLORS["white"])
@@ -239,8 +232,8 @@ class OvercookedV2Visualizer:
                 ingredient_fn = rendering.point_in_circle(pos[0], pos[1], 0.1)
                 rendering.fill_coords(img, ingredient_fn, color)
 
-    @classmethod
-    def _render_pot(cls, cell, img):
+    @staticmethod
+    def _render_pot(cell, img):
         ingredients = cell[1]
         time_left = cell[2]
 
@@ -287,8 +280,8 @@ class OvercookedV2Visualizer:
             )
             rendering.fill_coords(img, progress_fn, COLORS["green"])
 
-    @classmethod
-    def _render_inv(cls, ingredients, img):
+    @staticmethod
+    def _render_inv(ingredients, img):
         print("ingredients: ", ingredients)
         if DynamicObject.is_ingredient(ingredients):
             print("is ingredient")
@@ -310,9 +303,8 @@ class OvercookedV2Visualizer:
                 ingredient_fn = rendering.point_in_circle(pos[0], pos[1], 0.10)
                 rendering.fill_coords(img, ingredient_fn, color)
 
-    @classmethod
+    @staticmethod
     def _render_tile(
-        cls,
         obj,
         highlight=False,
         tile_size=TILE_PIXELS,
@@ -323,8 +315,8 @@ class OvercookedV2Visualizer:
         """
         key = (*obj.tolist(), highlight, tile_size)
 
-        if key in cls.tile_cache:
-            return cls.tile_cache[key]
+        if key in OvercookedV2Visualizer.tile_cache:
+            return OvercookedV2Visualizer.tile_cache[key]
 
         img = np.zeros(
             shape=(tile_size * subdivs, tile_size * subdivs, 3), dtype=np.uint8
@@ -347,13 +339,12 @@ class OvercookedV2Visualizer:
         img = rendering.downsample(img, subdivs)
 
         # Cache the rendered tile
-        cls.tile_cache[key] = img
+        OvercookedV2Visualizer.tile_cache[key] = img
 
         return img
 
-    @classmethod
+    @staticmethod
     def _render_grid(
-        cls,
         grid,
         tile_size=TILE_PIXELS,
         highlight_mask=None,
