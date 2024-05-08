@@ -111,11 +111,12 @@ class OvercookedV2Visualizer:
         )
 
         highlight_mask = np.zeros(grid.shape[:2], dtype=bool)
-        for x, y in zip(agents.pos.x, agents.pos.y):
-            x_low, x_high, y_low, y_high = compute_view_box(
-                x, y, agent_view_size, grid.shape[0], grid.shape[1]
-            )
-            highlight_mask[y_low:y_high, x_low:x_high] = True
+        if agent_view_size:
+            for x, y in zip(agents.pos.x, agents.pos.y):
+                x_low, x_high, y_low, y_high = compute_view_box(
+                    x, y, agent_view_size, grid.shape[0], grid.shape[1]
+                )
+                highlight_mask[y_low:y_high, x_low:x_high] = True
 
         # Render the whole grid
         img = OvercookedV2Visualizer._render_grid(
