@@ -1,6 +1,6 @@
 from collections import OrderedDict
 from enum import IntEnum
-
+from typing import Optional
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -18,10 +18,8 @@ from jaxmarl.environments.overcooked_v2.common import (
     Position,
     Agent,
 )
-
-
 from jaxmarl.environments.overcooked_v2.layouts import overcooked_v2_layouts as layouts
-from jaxmarl.environments.overcooked_v2.utils import tree_select
+from jaxmarl.environments.overcooked_v2.utils import compute_view_box, tree_select
 
 
 URGENCY_CUTOFF = 40  # When this many time steps remain, the urgency layer is flipped on
@@ -87,26 +85,33 @@ class OvercookedV2(MultiAgentEnv):
     def __init__(
         self,
         layout=layouts["cramped_room"],
-        # random_reset: bool = False,
         max_steps: int = 400,
         observation_type: ObservationType = ObservationType.LEGACY,
+        agent_view_size: Optional[int] = None,
     ):
+        """
+        Initializes the OvercookedV2 environment.
+
+        Args:
+            layout (Layout): The layout configuration for the environment, defaulting to "cramped_room".
+            max_steps (int): The maximum number of steps in the environment.
+            observation_type (ObservationType): The type of observation to return, either LEGACY or ENCODED.
+            agent_view_size (Optional[int]): The number of blocks the agent can view in each direction, None for full grid.
+        """
+
         num_agents = len(layout.agent_positions)
 
         super().__init__(num_agents=num_agents)
 
-        # self.obs_shape = (agent_view_size, agent_view_size, 3)
-        # Observations given by 26 channels, most of which are boolean masks
         self.height = layout.height
         self.width = layout.width
 
         self.layout = layout
         self.agents = [f"agent_{i}" for i in range(num_agents)]
-
         self.action_set = jnp.array(list(Actions))
 
         self.observation_type = observation_type
-
+        self.agent_view_size = agent_view_size
         self.obs_shape = self._get_obs_shape(observation_type)
 
         self.max_steps = max_steps
@@ -199,22 +204,55 @@ class OvercookedV2(MultiAgentEnv):
     def get_obs(self, state: State) -> Dict[str, chex.Array]:
         match self.observation_type:
             case ObservationType.LEGACY:
-                return self.get_obs_legacy(state)
+                all_obs = self.get_obs_legacy(state)
             case ObservationType.ENCODED:
-                return self.get_obs_encoded(state)
+                all_obs = self.get_obs_encoded(state)
             case _:
                 raise ValueError("Invalid observation type")
+
+        def _mask_obs(obs, agent):
+            view_size = self.agent_view_size
+            pos = agent.pos
+
+            padded_obs = jnp.pad(
+                obs,
+                ((view_size, view_size), (view_size, view_size), (0, 0)),
+                mode="constant",
+                constant_values=0,
+            )
+
+            total_size = 2 * view_size + 1
+            sliced_obs = jax.lax.dynamic_slice(
+                padded_obs,
+                (pos.y, pos.x, 0),
+                (total_size, total_size, obs.shape[-1]),
+            )
+
+            return sliced_obs
+
+        if self.agent_view_size is not None:
+            all_obs = jax.vmap(_mask_obs)(all_obs, state.agents)
+
+        return {f"agent_{i}": obs for i, obs in enumerate(all_obs)}
 
     def _get_obs_shape(
         self,
         obs_type: ObservationType,
     ) -> Tuple[int]:
+        if self.agent_view_size:
+            view_size = self.agent_view_size * 2 + 1
+            view_width = jnp.minimum(self.width, view_size)
+            view_height = jnp.minimum(self.height, view_size)
+        else:
+            view_width = self.width
+            view_height = self.height
+
         if obs_type == ObservationType.LEGACY:
             num_ingredients = self.layout.num_ingredients
             num_layers = 18 + 2 * num_ingredients
-            return (self.height, self.width, num_layers)
+            return (view_height, view_width, num_layers)
         elif obs_type == ObservationType.ENCODED:
-            return (self.height, self.width, 3)
+            return (view_height, view_width, 3)
         else:
             raise ValueError("Invalid observation type")
 
@@ -251,10 +289,7 @@ class OvercookedV2(MultiAgentEnv):
             pos = agent.pos
             return obs.at[pos.y, pos.x, 0].set(StaticObject.SELF_AGENT)
 
-        all_obs = jax.vmap(_agent_obs)(agents)
-
-        obs_dict = {f"agent_{i}": obs for i, obs in enumerate(all_obs)}
-        return obs_dict
+        return jax.vmap(_agent_obs)(agents)
 
     def get_obs_legacy(self, state: State) -> Dict[str, chex.Array]:
 
@@ -352,9 +387,7 @@ class OvercookedV2(MultiAgentEnv):
             )
             return obs.at[:, :, :5].set(self_layers).at[:, :, 5:10].add(-self_layers)
 
-        all_obs = jax.vmap(_agent_obs)(state.agents)
-
-        return {f"agent_{i}": obs for i, obs in enumerate(all_obs)}
+        return jax.vmap(_agent_obs)(state.agents)
 
     def step_agents(
         self,
