@@ -163,19 +163,26 @@ class OvercookedV2(MultiAgentEnv):
                 jnp.zeros_like(static_objects),  # extra info channel
             ],
             axis=-1,
+            dtype=jnp.int32,
         )
 
         num_agents = self.num_agents
-        positions = layout.agent_positions
+        x_positions, y_positions = map(jnp.array, zip(*layout.agent_positions))
         agents = Agent(
-            pos=Position(x=positions[:, 0], y=positions[:, 1]),
+            pos=Position(x=x_positions, y=y_positions),
             dir=jnp.full((num_agents,), Direction.UP),
             inventory=jnp.zeros((num_agents,), dtype=jnp.int32),
         )
 
-        recipe = 0
-        for ingredient in layout.recipe:
-            recipe += DynamicObject.ingredient(ingredient)
+        if layout.recipe:
+            fixed_recipe = jnp.array(layout.recipe)
+        else:
+            key, subkey = jax.random.split(key)
+            # maybe also sample recipe size, i.e. have recipes with less than 3 ingredients
+            fixed_recipe = jax.random.randint(subkey, (3,), 0, layout.num_ingredients)
+        recipe = DynamicObject.get_recipe_encoding(fixed_recipe)
+
+        print("Recipe: ", fixed_recipe)
 
         state = State(
             agents=agents,

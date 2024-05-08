@@ -2,9 +2,8 @@ import numpy as np
 import jax.numpy as jnp
 import chex
 import jax
-
 from enum import IntEnum
-from typing import NamedTuple
+from jax.typing import ArrayLike
 
 
 class StaticObject(IntEnum):
@@ -77,6 +76,11 @@ class DynamicObject(IntEnum):
     @staticmethod
     def get_ingredient_idx(obj):
         return DynamicObject.get_ingredient_idx_list(obj)[0]
+
+    @staticmethod
+    def get_recipe_encoding(recipe: ArrayLike):
+        ingredients = jax.vmap(DynamicObject.ingredient)(recipe)
+        return jnp.sum(ingredients)
 
 
 class Direction(IntEnum):
