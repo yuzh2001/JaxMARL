@@ -115,39 +115,41 @@ def get_rollout(train_state, config):
 
     network = ActorCritic(env.action_space().n, activation=config["ACTIVATION"])
     key = jax.random.PRNGKey(0)
-    key, key_r, key_a = jax.random.split(key, 3)
+    key, key_r = jax.random.split(key, 2)
 
-    init_x = jnp.zeros((1, *env.observation_space().shape))
-
-    network.init(key_a, init_x)
     network_params = train_state.params
 
     done = False
-
     obs, state = env.reset(key_r)
-    state_seq = [state]
-    while not done:
-        key, key_a0, key_a1, key_s = jax.random.split(key, 4)
 
-        # obs_batch = batchify(obs, env.agents, config["NUM_ACTORS"])
-        # breakpoint()
-        obs = {k: v.flatten() for k, v in obs.items()}
+    @jax.jit
+    def _perform_step(key, state, obs):
+        key_sample, key_step = jax.random.split(key, 2)
 
-        pi_0, _ = network.apply(network_params, obs["agent_0"])
-        pi_1, _ = network.apply(network_params, obs["agent_1"])
+        obs = jnp.stack([obs[a] for a in env.agents])
 
-        actions = {
-            "agent_0": pi_0.sample(seed=key_a0),
-            "agent_1": pi_1.sample(seed=key_a1),
-        }
-        # env_act = unbatchify(action, env.agents, config["NUM_ENVS"], env.num_agents)
-        # env_act = {k: v.flatten() for k, v in env_act.items()}
+        pi, _ = network.apply(network_params, obs)
+
+        actions = pi.sample(seed=key_sample)
+        actions = {f"agent_{i}": actions[i] for i in range(env.num_agents)}
 
         # STEP ENV
-        obs, state, reward, done, info = env.step(key_s, state, actions)
+        obs, state, reward, done, info = env.step(key_step, state, actions)
+
+        return obs, state, reward, done, info
+
+    state_seq = [state]
+    total_reward = 0
+    while not done:
+        key, subkey = jax.random.split(key)
+
+        obs, state, reward, done, info = _perform_step(subkey, state, obs)
         done = done["__all__"]
+        total_reward += reward["agent_0"]
 
         state_seq.append(state)
+
+    print("Total reward: ", total_reward)
 
     return state_seq
 
@@ -476,12 +478,13 @@ def main(config):
 
     print("Final reward mean: ", reward_mean[-1])
 
-    # # animate first seed
-    # train_state = jax.tree_util.tree_map(lambda x: x[0], out["runner_state"][0])
-    # state_seq = get_rollout(train_state, config)
-    # viz = OvercookedV2Visualizer()
-    # # agent_view_size is hardcoded as it determines the padding around the layout.
-    # viz.animate(state_seq, agent_view_size=5, filename=f"{filename}.gif")
+    agent_view_size = config["ENV_KWARGS"].get("agent_view_size", None)
+
+    # animate first seed
+    train_state = jax.tree_util.tree_map(lambda x: x[0], out["runner_state"][0])
+    state_seq = get_rollout(train_state, config)
+    viz = OvercookedV2Visualizer()
+    viz.animate(state_seq, agent_view_size=agent_view_size, filename=f"{filename}.gif")
 
 
 if __name__ == "__main__":
