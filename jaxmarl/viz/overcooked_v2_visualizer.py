@@ -1,8 +1,10 @@
 import math
 import numpy as np
+from jaxmarl.environments.overcooked_v2.utils import compute_view_box
 from jaxmarl.viz.window import Window
 import jaxmarl.viz.grid_rendering as rendering
 import jax
+import jax.numpy as jnp
 from jaxmarl.environments.overcooked_v2.common import StaticObject, DynamicObject
 from jaxmarl.environments.overcooked_v2.overcooked import POT_COOK_TIME
 
@@ -93,10 +95,11 @@ class OvercookedV2Visualizer:
             pos = agent.pos
             inventory = agent.inventory
             direction = agent.dir
-            return (
-                grid.at[pos.y, pos.x].set([StaticObject.AGENT, inventory, direction]),
-                None,
+
+            new_grid = grid.at[pos.y, pos.x].set(
+                [StaticObject.AGENT, inventory, direction]
             )
+            return new_grid, None
 
         grid, _ = jax.lax.scan(_include_agents, grid, agents)
 
@@ -107,10 +110,18 @@ class OvercookedV2Visualizer:
             recipe | DynamicObject.COOKED | DynamicObject.PLATE
         )
 
+        highlight_mask = np.zeros(grid.shape[:2], dtype=bool)
+        for x, y in zip(agents.pos.x, agents.pos.y):
+            x_low, x_high, y_low, y_high = compute_view_box(
+                x, y, agent_view_size, grid.shape[0], grid.shape[1]
+            )
+            highlight_mask[y_low:y_high, x_low:x_high] = True
+
         # Render the whole grid
         img = OvercookedV2Visualizer._render_grid(
             grid,
-            tile_size,
+            highlight_mask=highlight_mask,
+            tile_size=tile_size,
         )
         return img
 
@@ -346,8 +357,8 @@ class OvercookedV2Visualizer:
     @staticmethod
     def _render_grid(
         grid,
-        tile_size=TILE_PIXELS,
         highlight_mask=None,
+        tile_size=TILE_PIXELS,
     ):
         if highlight_mask is None:
             highlight_mask = np.zeros(shape=grid.shape[:2], dtype=bool)
