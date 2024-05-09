@@ -57,6 +57,14 @@ W   W   X
 WWWWWWWWW
 """
 
+two_rooms_simple = """
+WWWWWBI1I0W
+W   W   R
+P A W A W
+W   W   X
+WWWWWWWWW
+"""
+
 
 @dataclass
 class Layout:
@@ -185,4 +193,5 @@ overcooked_v2_layouts = {
     "forced_coord": layout_grid_to_dict(forced_coord, recipe=[0, 0, 0]),
     "counter_circuit": layout_grid_to_dict(counter_circuit_grid, recipe=[0, 0, 0]),
     "two_rooms": layout_grid_to_dict(two_rooms),
+    "two_rooms_simple": layout_grid_to_dict(two_rooms_simple),
 }

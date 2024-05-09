@@ -294,9 +294,8 @@ class OvercookedV2Visualizer:
 
     @staticmethod
     def _render_inv(ingredients, img):
-        print("ingredients: ", ingredients)
+        # print("ingredients: ", ingredients)
         if DynamicObject.is_ingredient(ingredients):
-            print("is ingredient")
             idx = DynamicObject.get_ingredient_idx(ingredients)
             ingredient_fn = rendering.point_in_circle(0.75, 0.75, 0.15)
             rendering.fill_coords(img, ingredient_fn, INGREDIENT_COLORS[idx])

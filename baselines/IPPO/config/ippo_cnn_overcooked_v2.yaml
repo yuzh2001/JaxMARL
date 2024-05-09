@@ -14,7 +14,7 @@
 "ACTIVATION": "relu"
 "ENV_NAME": "overcooked_v2"
 "ENV_KWARGS": 
-  "layout" : "cramped_room_v2"
+  "layout" : "two_rooms_simple"
   "agent_view_size": 2
 "ANNEAL_LR": True
 "SEED": 42
