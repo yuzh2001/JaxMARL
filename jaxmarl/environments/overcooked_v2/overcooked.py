@@ -1,6 +1,6 @@
 from collections import OrderedDict
 from enum import IntEnum
-from typing import Optional
+from typing import Optional, Union
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -18,7 +18,7 @@ from jaxmarl.environments.overcooked_v2.common import (
     Position,
     Agent,
 )
-from jaxmarl.environments.overcooked_v2.layouts import overcooked_v2_layouts as layouts
+from jaxmarl.environments.overcooked_v2.layouts import overcooked_v2_layouts, Layout
 from jaxmarl.environments.overcooked_v2.utils import compute_view_box, tree_select
 
 
@@ -84,7 +84,7 @@ class OvercookedV2(MultiAgentEnv):
 
     def __init__(
         self,
-        layout=layouts["cramped_room"],
+        layout: Union[str, Layout] = "cramped_room",
         max_steps: int = 400,
         observation_type: ObservationType = ObservationType.LEGACY,
         agent_view_size: Optional[int] = None,
@@ -93,11 +93,20 @@ class OvercookedV2(MultiAgentEnv):
         Initializes the OvercookedV2 environment.
 
         Args:
-            layout (Layout): The layout configuration for the environment, defaulting to "cramped_room".
+            layout (Layout): The layout configuration for the environment, defaulting to "cramped_room". Either a Layout object or a string key to look up a Layout in overcooked_v2_layouts.
             max_steps (int): The maximum number of steps in the environment.
             observation_type (ObservationType): The type of observation to return, either LEGACY or ENCODED.
             agent_view_size (Optional[int]): The number of blocks the agent can view in each direction, None for full grid.
         """
+
+        if isinstance(layout, str):
+            if layout not in overcooked_v2_layouts:
+                raise ValueError(
+                    f"Invalid layout: {layout}, allowed layouts: {overcooked_v2_layouts.keys()}"
+                )
+            layout = overcooked_v2_layouts[layout]
+        elif not isinstance(layout, Layout):
+            raise ValueError("Invalid layout, must be a Layout object or a string key")
 
         num_agents = len(layout.agent_positions)
 
@@ -107,6 +116,7 @@ class OvercookedV2(MultiAgentEnv):
         self.width = layout.width
 
         self.layout = layout
+
         self.agents = [f"agent_{i}" for i in range(num_agents)]
         self.action_set = jnp.array(list(Actions))
 
@@ -221,11 +231,10 @@ class OvercookedV2(MultiAgentEnv):
                 constant_values=0,
             )
 
-            total_size = 2 * view_size + 1
             sliced_obs = jax.lax.dynamic_slice(
                 padded_obs,
                 (pos.y, pos.x, 0),
-                (total_size, total_size, obs.shape[-1]),
+                self.obs_shape,
             )
 
             return sliced_obs

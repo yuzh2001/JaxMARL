@@ -103,7 +103,7 @@ def layout_grid_to_dict(grid, recipe=None):
         rows = rows[:-1]
 
     row_lens = [len(row) for row in rows]
-    static_objects = np.zeros((len(rows), max(row_lens)))
+    static_objects = np.zeros((len(rows), max(row_lens)), dtype=int)
 
     char_to_static_item = {
         " ": StaticObject.EMPTY,

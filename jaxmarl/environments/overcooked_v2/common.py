@@ -65,12 +65,10 @@ class DynamicObject(IntEnum):
         res = []
         obj >>= 2
         idx = 0
-        print("obj: ", obj)
         while obj > 0:
             res += [idx] * (obj & 0x3).item()
             obj >>= 2
             idx += 1
-        print("res: ", res)
         return res
 
     @staticmethod

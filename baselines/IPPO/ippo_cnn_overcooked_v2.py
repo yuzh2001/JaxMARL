@@ -432,7 +432,6 @@ def main(config):
     config = OmegaConf.to_container(config)
 
     layout_name = config["ENV_KWARGS"]["layout"]
-    config["ENV_KWARGS"]["layout"] = overcooked_v2_layouts[layout_name]
     num_seeds = config["NUM_SEEDS"]
 
     wandb.init(

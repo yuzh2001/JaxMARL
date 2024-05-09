@@ -15,6 +15,7 @@
 "ENV_NAME": "overcooked_v2"
 "ENV_KWARGS": 
   "layout" : "cramped_room_v2"
+  "agent_view_size": 2
 "ANNEAL_LR": True
 "SEED": 42
 "NUM_SEEDS": 1
