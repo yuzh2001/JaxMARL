@@ -25,6 +25,22 @@ W A PA  W
 WWWBWBWWW
 """
 
+asymm_advantages_recipes_center = """
+WWWWWWWWW
+O WXROW X
+W   P   W
+W A PA  W
+WWWBWBWWW
+"""
+
+asymm_advantages_recipes_side = """
+WWWWWWWWW
+O WXWOW X
+W   P   R
+W A PA  W
+WWWBWBWWW
+"""
+
 coord_ring = """
 WWWPW
 W A P
@@ -189,6 +205,10 @@ overcooked_v2_layouts = {
     "cramped_room": layout_grid_to_dict(cramped_room, recipe=[0, 0, 0]),
     "cramped_room_v2": layout_grid_to_dict(cramped_room_v2),
     "asymm_advantages": layout_grid_to_dict(asymm_advantages, recipe=[0, 0, 0]),
+    "asymm_advantages_recipes_center": layout_grid_to_dict(
+        asymm_advantages_recipes_center
+    ),
+    "asymm_advantages_recipes_side": layout_grid_to_dict(asymm_advantages_recipes_side),
     "coord_ring": layout_grid_to_dict(coord_ring, recipe=[0, 0, 0]),
     "forced_coord": layout_grid_to_dict(forced_coord, recipe=[0, 0, 0]),
     "counter_circuit": layout_grid_to_dict(counter_circuit_grid, recipe=[0, 0, 0]),
