@@ -108,22 +108,17 @@ class Transition(NamedTuple):
     info: jnp.ndarray
 
 
-def get_rollout(train_state, config):
+def get_rollout(train_state, config, key):
     env = jaxmarl.make(config["ENV_NAME"], **config["ENV_KWARGS"])
-    # env_params = env.default_params
-    # env = LogWrapper(env)
 
     network = ActorCritic(env.action_space().n, activation=config["ACTIVATION"])
-    key = jax.random.PRNGKey(0)
-    key, key_r = jax.random.split(key, 2)
 
     network_params = train_state.params
 
-    done = False
-    obs, state = env.reset(key_r)
-
     @jax.jit
-    def _perform_step(key, state, obs):
+    def _perform_step(carry, key):
+        obs, state, total_reward = carry
+
         key_sample, key_step = jax.random.split(key, 2)
 
         obs = jnp.stack([obs[a] for a in env.agents])
@@ -134,21 +129,20 @@ def get_rollout(train_state, config):
         actions = {f"agent_{i}": actions[i] for i in range(env.num_agents)}
 
         # STEP ENV
-        obs, state, reward, done, info = env.step(key_step, state, actions)
+        next_obs, next_state, reward, done, info = env.step(key_step, state, actions)
 
-        return obs, state, reward, done, info
+        new_total_reward = total_reward + reward["agent_0"]
+        carry = (next_obs, next_state, new_total_reward)
+        return carry, next_state
 
-    state_seq = [state]
-    total_reward = 0
-    while not done:
-        key, subkey = jax.random.split(key)
+    key, key_r = jax.random.split(key, 2)
+    obs, state = env.reset(key_r)
 
-        obs, state, reward, done, info = _perform_step(subkey, state, obs)
-        done = done["__all__"]
-        total_reward += reward["agent_0"]
+    keys = jax.random.split(key, env.max_steps())
+    carry = (obs, state, 0.0)
+    carry, state_seq = jax.lax.scan(_perform_step, carry, keys)
 
-        state_seq.append(state)
-
+    _, _, total_reward = carry
     print("Total reward: ", total_reward)
 
     return state_seq
