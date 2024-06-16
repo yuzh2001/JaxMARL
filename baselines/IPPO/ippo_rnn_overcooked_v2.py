@@ -304,17 +304,11 @@ def make_train(config):
                 # SELECT ACTION
                 rng, _rng = jax.random.split(rng)
 
-                # obs_batch = jnp.stack([last_obs[a] for a in env.agents]).reshape(
-                #     -1, *env.observation_space().shape
-                # )
-                print([last_obs[a].shape for a in env.agents])
                 obs_batch = batchify(last_obs, env.agents, config["NUM_ACTORS"])
                 ac_in = (
                     obs_batch[np.newaxis, :],
                     last_done[np.newaxis, :],
                 )
-                print("Obs batch: ", obs_batch.shape)
-                print(env.observation_space().shape)
 
                 hstate, pi, value = network.apply(train_state.params, hstate, ac_in)
                 action = pi.sample(seed=_rng)
@@ -357,11 +351,11 @@ def make_train(config):
                 )
                 done_batch = batchify(done, env.agents, config["NUM_ACTORS"]).squeeze()
                 transition = Transition(
-                    done_batch,
-                    action,
-                    value,
+                    jnp.tile(done["__all__"], env.num_agents),
+                    action.squeeze(),
+                    value.squeeze(),
                     batchify(reward, env.agents, config["NUM_ACTORS"]).squeeze(),
-                    log_prob,
+                    log_prob.squeeze(),
                     obs_batch,
                     info,
                 )
@@ -384,6 +378,7 @@ def make_train(config):
                 last_done[np.newaxis, :],
             )
             _, _, last_val = network.apply(train_state.params, hstate, ac_in)
+            last_val = last_val.squeeze()
 
             def _calculate_gae(traj_batch, last_val):
                 def _get_advantages(gae_and_next_value, transition):
@@ -419,6 +414,7 @@ def make_train(config):
                     def _loss_fn(params, init_hstate, traj_batch, gae, targets):
                         # RERUN NETWORK
                         _, pi, value = network.apply(params, init_hstate.squeeze(), (traj_batch.obs, traj_batch.done))
+
                         log_prob = pi.log_prob(traj_batch.action)
 
                         # CALCULATE VALUE LOSS
@@ -529,7 +525,7 @@ def make_train(config):
             metric["env_step"] = update_step * config["NUM_STEPS"] * config["NUM_ENVS"]
             jax.debug.callback(callback, metric)
 
-            runner_state = (train_state, env_state, last_obs, last_done, update_step, rng)
+            runner_state = (train_state, env_state, last_obs, last_done, update_step, hstate, rng)
             return runner_state, metric
 
         rng, _rng = jax.random.split(rng)
@@ -597,11 +593,11 @@ def main(config):
     agent_view_size = config["ENV_KWARGS"].get("agent_view_size", None)
 
     # animate first seed
-    train_state = jax.tree_util.tree_map(lambda x: x[0], out["runner_state"][0])
-    key = jax.random.PRNGKey(config["SEED"])
-    state_seq = get_rollout(train_state, config, key)
-    viz = OvercookedV2Visualizer()
-    viz.animate(state_seq, agent_view_size=agent_view_size, filename=f"{filename}.gif")
+    # train_state = jax.tree_util.tree_map(lambda x: x[0], out["runner_state"][0])
+    # key = jax.random.PRNGKey(config["SEED"])
+    # state_seq = get_rollout(train_state, config, key)
+    # viz = OvercookedV2Visualizer()
+    # viz.animate(state_seq, agent_view_size=agent_view_size, filename=f"{filename}.gif")
 
 
 if __name__ == "__main__":
