@@ -89,6 +89,12 @@ W   W   X
 WWWWWWWWW
 """
 
+long_room = """
+WWWWWWWWWWWWWWW
+B            AP
+0             X
+WWWWWWWWWWWWWWW
+"""
 
 @dataclass
 class Layout:
@@ -215,4 +221,5 @@ overcooked_v2_layouts = {
     "counter_circuit": layout_grid_to_dict(counter_circuit_grid, recipe=[0, 0, 0]),
     "two_rooms": layout_grid_to_dict(two_rooms),
     "two_rooms_simple": layout_grid_to_dict(two_rooms_simple),
+    "long_room": layout_grid_to_dict(long_room, recipe=[0, 0, 0]),
 }
