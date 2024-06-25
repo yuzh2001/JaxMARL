@@ -12,7 +12,7 @@ WBWXW
 
 cramped_room_v2 = """
 WWPWW
-I0A AI1
+0A A1
 W   R
 WBWXW
 """
@@ -27,17 +27,25 @@ WWWBWBWWW
 
 asymm_advantages_recipes_center = """
 WWWWWWWWW
-O WXROW X
-W   P   W
+0 WXR01 X
+1   P   W
 W A PA  W
 WWWBWBWWW
 """
 
-asymm_advantages_recipes_side = """
+asymm_advantages_recipes_right = """
 WWWWWWWWW
-O WXWOW X
-W   P   R
+0 WXW01 X
+1   P   R
 W A PA  W
+WWWBWBWWW
+"""
+
+asymm_advantages_recipes_left = """
+WWWWWWWWW
+0 WXW01 X
+1   P   W
+R A PA  W
 WWWBWBWWW
 """
 
@@ -66,7 +74,7 @@ WWWOOWWW
 """
 
 two_rooms = """
-WI0I1BWBI1I0W
+W01BWB10W
 W   W   R
 P A W A W
 W   W   X
@@ -74,7 +82,7 @@ WWWWWWWWW
 """
 
 two_rooms_simple = """
-WWWWWBI1I0W
+WWWWWB10W
 W   W   R
 P A W A W
 W   W   X
@@ -107,11 +115,11 @@ def layout_grid_to_dict(grid, recipe=None):
     B: plate (bowl) pile
     P: pot location
     R: recipe of the day indicator
-    Ix: Ingredient x pile
+    0-9: Ingredient x pile
     ' ' (space) : empty cell
 
     Depricated:
-    O: onion pile - will be interpreted as I0
+    O: onion pile - will be interpreted as ingredient 0
 
 
     If `recipe` is provided, it should be a list of ingredient indices, max 3 ingredients per recipe
@@ -139,25 +147,19 @@ def layout_grid_to_dict(grid, recipe=None):
     }
 
     for r in range(10):
-        char_to_static_item[f"I{r}"] = StaticObject.INGREDIENT_PILE_BASE + r
+        char_to_static_item[f"{r}"] = StaticObject.INGREDIENT_PILE_BASE + r
 
     agent_positions = []
 
-    max_width = 0
     num_ingredients = 0
     includes_recipe_indicator = False
     for r, row in enumerate(rows):
-        j = 0
         c = 0
-        while j < len(row):
-            char = row[j]
-            if char == "I" and j + 1 < len(row) and row[j + 1].isdigit():
-                # Handle multi-character ingredient identifiers like I0, I1, etc.
-                char += row[j + 1]
-                j += 1  # Skip the next character as it is part of the current one
+        while c < len(row):
+            char = row[c]
 
             if char == "O":
-                char = "I0"
+                char = "0"
 
             if char == "A":
                 agent_pos = (c, r)
@@ -173,9 +175,7 @@ def layout_grid_to_dict(grid, recipe=None):
             if obj == StaticObject.RECIPE_INDICATOR:
                 includes_recipe_indicator = True
 
-            j += 1
             c += 1
-        max_width = max(max_width, c)
 
     # TODO: add some sanity checks - e.g. agent must exist, surrounded by walls, etc.
 
@@ -191,8 +191,8 @@ def layout_grid_to_dict(grid, recipe=None):
 
     layout = Layout(
         agent_positions=agent_positions,
-        static_objects=static_objects[:, :max_width],
-        width=max_width,
+        static_objects=static_objects,
+        width=len(rows[0]),
         height=len(rows),
         recipe=recipe,
         num_ingredients=num_ingredients,
@@ -208,7 +208,8 @@ overcooked_v2_layouts = {
     "asymm_advantages_recipes_center": layout_grid_to_dict(
         asymm_advantages_recipes_center
     ),
-    "asymm_advantages_recipes_side": layout_grid_to_dict(asymm_advantages_recipes_side),
+    "asymm_advantages_recipes_right": layout_grid_to_dict(asymm_advantages_recipes_right),
+    "asymm_advantages_recipes_left": layout_grid_to_dict(asymm_advantages_recipes_left),
     "coord_ring": layout_grid_to_dict(coord_ring, recipe=[0, 0, 0]),
     "forced_coord": layout_grid_to_dict(forced_coord, recipe=[0, 0, 0]),
     "counter_circuit": layout_grid_to_dict(counter_circuit_grid, recipe=[0, 0, 0]),
