@@ -19,7 +19,7 @@ from jaxmarl.environments.overcooked_v2.common import (
     Agent,
 )
 from jaxmarl.environments.overcooked_v2.layouts import overcooked_v2_layouts, Layout
-from jaxmarl.environments.overcooked_v2.utils import compute_view_box, tree_select
+from jaxmarl.environments.overcooked_v2.utils import compute_view_box, tree_select, get_possible_recipes
 
 
 URGENCY_CUTOFF = 40  # When this many time steps remain, the urgency layer is flipped on
@@ -126,6 +126,8 @@ class OvercookedV2(MultiAgentEnv):
 
         self.max_steps = max_steps
 
+        self.possible_recipes = get_possible_recipes(layout.num_ingredients)
+
     def step_env(
         self,
         key: chex.PRNGKey,
@@ -189,12 +191,17 @@ class OvercookedV2(MultiAgentEnv):
             inventory=jnp.zeros((num_agents,), dtype=jnp.int32),
         )
 
-        if layout.recipe:
+        if layout.recipe is not None:
             fixed_recipe = jnp.array(layout.recipe)
         else:
             key, subkey = jax.random.split(key)
-            # maybe also sample recipe size, i.e. have recipes with less than 3 ingredients
-            fixed_recipe = jax.random.randint(subkey, (3,), 0, layout.num_ingredients)
+            # fixed_recipe = jax.random.randint(subkey, (3,), 0, layout.num_ingredients)
+
+            # generate random index for self.possible_recipes
+            fixed_recipe_idx = jax.random.randint(subkey, (), 0, len(self.possible_recipes))
+            fixed_recipe = self.possible_recipes[fixed_recipe_idx]
+            print("fixed_recipe: ", fixed_recipe)
+
         recipe = DynamicObject.get_recipe_encoding(fixed_recipe)
 
         print("Recipe: ", fixed_recipe)
@@ -258,7 +265,7 @@ class OvercookedV2(MultiAgentEnv):
 
         if obs_type == ObservationType.LEGACY:
             num_ingredients = self.layout.num_ingredients
-            num_layers = 18 + 2 * num_ingredients
+            num_layers = 18 + 4 * num_ingredients
             return (view_height, view_width, num_layers)
         elif obs_type == ObservationType.ENCODED:
             return (view_height, view_width, 3)
@@ -323,23 +330,42 @@ class OvercookedV2(MultiAgentEnv):
                 )
             )
 
+        def _ingridient_layers(ingredients):
+            ingredients_layers = []
+            for _ in range(num_ingredients):
+                ingredients >>= 2
+                ingredients_layers.append(jnp.array(ingredients & 0x3, dtype=jnp.uint8))
+            return ingredients_layers
+
+
+
         ingredients = state.grid[:, :, 1]
 
-        recipe_indicator_mask = static_objects == StaticObject.RECIPE_INDICATOR
-        ingredients = jnp.where(recipe_indicator_mask, state.recipe, ingredients)
-        ingredients = ingredients.at[state.agents.pos.y, state.agents.pos.x].set(
-            state.agents.inventory
-        )
+        # recipe_indicator_mask = static_objects == StaticObject.RECIPE_INDICATOR
+        # ingredients = jnp.where(recipe_indicator_mask, state.recipe, ingredients)
+        # ingredients = ingredients.at[state.agents.pos.y, state.agents.pos.x].set(
+        #     state.agents.inventory
+        # )
 
         ingredients_layers = [
             jnp.array(ingredients & DynamicObject.PLATE != 0, dtype=jnp.uint8),
             jnp.array(ingredients & DynamicObject.COOKED != 0, dtype=jnp.uint8),
         ]
 
-        tmp_ingredients = ingredients
-        for _ in range(num_ingredients):
-            tmp_ingredients >>= 2
-            ingredients_layers.append(jnp.array(tmp_ingredients & 0x3, dtype=jnp.uint8))
+        ingredients_layers += _ingridient_layers(ingredients)
+
+        inventory_layers = []
+        recipe_layers = []
+
+
+        tmp_inventory = jnp.zeros_like(ingredients).at[state.agents.pos.y, state.agents.pos.x].set(
+            state.agents.inventory
+        )
+        inventory_layers = _ingridient_layers(tmp_inventory)
+
+        recipe_indicator_mask = static_objects == StaticObject.RECIPE_INDICATOR
+        tmp_recipe = jnp.where(recipe_indicator_mask, state.recipe, 0)
+        recipe_layers = _ingridient_layers(tmp_recipe)
 
         extra_info = state.grid[:, :, 2]
         extra_layers = [
@@ -376,7 +402,7 @@ class OvercookedV2(MultiAgentEnv):
         #     all_agent_layer,
         # ]
 
-        all_layers = agent_layers + static_layers + ingredients_layers + extra_layers
+        all_layers = agent_layers + static_layers + ingredients_layers + inventory_layers + recipe_layers + extra_layers
 
         obs = jnp.stack(
             all_layers,
@@ -744,5 +770,5 @@ class OvercookedV2(MultiAgentEnv):
             }
         )
 
-    def max_steps(self) -> int:
-        return self.max_steps
+    # def max_steps(self) -> int:
+    #     return self.max_steps
