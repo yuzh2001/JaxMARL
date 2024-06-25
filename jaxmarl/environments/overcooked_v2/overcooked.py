@@ -19,7 +19,11 @@ from jaxmarl.environments.overcooked_v2.common import (
     Agent,
 )
 from jaxmarl.environments.overcooked_v2.layouts import overcooked_v2_layouts, Layout
-from jaxmarl.environments.overcooked_v2.utils import compute_view_box, tree_select, get_possible_recipes
+from jaxmarl.environments.overcooked_v2.utils import (
+    compute_view_box,
+    tree_select,
+    get_possible_recipes,
+)
 
 
 URGENCY_CUTOFF = 40  # When this many time steps remain, the urgency layer is flipped on
@@ -88,6 +92,8 @@ class OvercookedV2(MultiAgentEnv):
         max_steps: int = 400,
         observation_type: ObservationType = ObservationType.LEGACY,
         agent_view_size: Optional[int] = None,
+        random_reset: bool = False,
+        random_agent_positions: bool = False,
     ):
         """
         Initializes the OvercookedV2 environment.
@@ -97,6 +103,8 @@ class OvercookedV2(MultiAgentEnv):
             max_steps (int): The maximum number of steps in the environment.
             observation_type (ObservationType): The type of observation to return, either LEGACY or ENCODED.
             agent_view_size (Optional[int]): The number of blocks the agent can view in each direction, None for full grid.
+            random_reset (bool): Whether to reset the environment with random agent positions, inventories and pot states.
+            random_agent_positions (bool): Whether to randomize agent positions.
         """
 
         if isinstance(layout, str):
@@ -127,6 +135,8 @@ class OvercookedV2(MultiAgentEnv):
         self.max_steps = max_steps
 
         self.possible_recipes = get_possible_recipes(layout.num_ingredients)
+        self.random_reset = random_reset
+        self.random_agent_positions = random_agent_positions
 
     def step_env(
         self,
@@ -198,7 +208,9 @@ class OvercookedV2(MultiAgentEnv):
             # fixed_recipe = jax.random.randint(subkey, (3,), 0, layout.num_ingredients)
 
             # generate random index for self.possible_recipes
-            fixed_recipe_idx = jax.random.randint(subkey, (), 0, len(self.possible_recipes))
+            fixed_recipe_idx = jax.random.randint(
+                subkey, (), 0, len(self.possible_recipes)
+            )
             fixed_recipe = self.possible_recipes[fixed_recipe_idx]
             print("fixed_recipe: ", fixed_recipe)
 
@@ -214,18 +226,138 @@ class OvercookedV2(MultiAgentEnv):
             recipe=recipe,
         )
 
+        key, key_randomise = jax.random.split(key)
+        if self.random_reset:
+            state = self._randomize_state(state, key_randomise)
+        elif self.random_agent_positions:
+            state = self._randomize_agent_positions(state, key_randomise)
+
         obs = self.get_obs(state)
 
         return lax.stop_gradient(obs), lax.stop_gradient(state)
 
+    def _randomize_agent_positions(self, state: State, key: chex.PRNGKey) -> State:
+        """Randomize agent positions."""
+        num_agents = self.num_agents
+        grid = state.grid
+        agents = state.agents
+
+        # Agent positions
+        empty_mask = (grid[:, :, 0] == StaticObject.EMPTY).flatten()
+        p = empty_mask / jnp.sum(empty_mask)
+        agent_pos_indices = jax.random.choice(
+            key, empty_mask.size, (num_agents,), replace=False, p=p
+        )
+        agent_positions = Position(
+            x=agent_pos_indices % self.width, y=agent_pos_indices // self.width
+        )
+
+        return state.replace(agents=agents.replace(pos=agent_positions))
+
+    def _randomize_state(self, state: State, key: chex.PRNGKey) -> State:
+        """Randomize the state of the environment."""
+
+        key, subkey = jax.random.split(key)
+        state = self._randomize_agent_positions(state, subkey)
+
+        num_agents = self.num_agents
+        agents = state.agents
+        grid = state.grid
+
+        # Agent inventory
+        def _sample_inventory(key):
+            key_dish, key_ing, key_inv = jax.random.split(key, 3)
+
+            def _sample_dish(key):
+                recipe_idx = jax.random.randint(key, (), 0, len(self.possible_recipes))
+                recipe = self.possible_recipes[recipe_idx]
+                return (
+                    DynamicObject.get_recipe_encoding(recipe)
+                    | DynamicObject.COOKED
+                    | DynamicObject.PLATE
+                )
+
+            ingridient_idx = jax.random.randint(
+                key_ing, (), 0, self.layout.num_ingredients
+            )
+
+            possible_inventory = jnp.array(
+                [
+                    DynamicObject.EMPTY,
+                    DynamicObject.PLATE,
+                    DynamicObject.ingredient(ingridient_idx),
+                    _sample_dish(key_dish),
+                ],
+                dtype=jnp.int32,
+            )
+
+            inventory = jax.random.choice(
+                key_inv, possible_inventory, (), p=jnp.array([0.5, 0.1, 0.25, 0.15])
+            )
+            return inventory
+
+        key, subkey = jax.random.split(key)
+        agent_inventories = jax.vmap(_sample_inventory)(
+            jax.random.split(subkey, num_agents)
+        )
+
+        def _sample_pot_states_wrapper(cell, key):
+            is_pot = cell[0] == StaticObject.POT
+
+            def _sample_pot_states(key):
+                key, key_ing, key_num = jax.random.split(key, 3)
+                raw_ingridients = jax.random.randint(
+                    key_ing, (3,), 0, self.layout.num_ingredients
+                )
+                raw_ingridients = jax.vmap(DynamicObject.ingredient)(raw_ingridients)
+
+                partial_recipe = jax.random.randint(key_num, (), 1, 4)
+                mask = jnp.arange(3) < partial_recipe
+                raw_ingridients *= mask
+
+                pot_ingridients = jnp.sum(raw_ingridients)
+
+                pot_timer = jax.random.randint(key, (), 0, POT_COOK_TIME) + 1
+
+                possible_states = jnp.array(
+                    [
+                        cell,
+                        [cell[0], pot_ingridients, 0],
+                        [cell[0], pot_ingridients, pot_timer],
+                        [cell[0], pot_ingridients | DynamicObject.COOKED, 0],
+                    ]
+                )
+                # 0 for do nothing, 1 for not started, 2 for started cooking, 3 for finished cooking
+                return jax.random.choice(
+                    key, possible_states, p=jnp.array([0.4, 0.35, 0.15, 0.1])
+                )
+
+            return jax.lax.cond(is_pot, _sample_pot_states, lambda _: cell, key)
+
+        key, subkey = jax.random.split(key)
+        key_pots = jax.random.split(subkey, (self.height, self.width))
+        new_grid = jax.vmap(jax.vmap(_sample_pot_states_wrapper))(grid, key_pots)
+
+        return state.replace(
+            agents=agents.replace(inventory=agent_inventories),
+            grid=new_grid,
+        )
+
     def get_obs(self, state: State) -> Dict[str, chex.Array]:
-        match self.observation_type:
-            case ObservationType.LEGACY:
-                all_obs = self.get_obs_legacy(state)
-            case ObservationType.ENCODED:
-                all_obs = self.get_obs_encoded(state)
-            case _:
-                raise ValueError("Invalid observation type")
+        # match self.observation_type:
+        #     case ObservationType.LEGACY:
+        #         all_obs = self.get_obs_legacy(state)
+        #     case ObservationType.ENCODED:
+        #         all_obs = self.get_obs_encoded(state)
+        #     case _:
+        #         raise ValueError("Invalid observation type")
+
+        if self.observation_type == ObservationType.LEGACY:
+            all_obs = self.get_obs_legacy(state)
+        elif self.observation_type == ObservationType.ENCODED:
+            all_obs = self.get_obs_encoded(state)
+        else:
+            raise ValueError("Invalid observation type")
 
         def _mask_obs(obs, agent):
             view_size = self.agent_view_size
@@ -337,8 +469,6 @@ class OvercookedV2(MultiAgentEnv):
                 ingredients_layers.append(jnp.array(ingredients & 0x3, dtype=jnp.uint8))
             return ingredients_layers
 
-
-
         ingredients = state.grid[:, :, 1]
 
         # recipe_indicator_mask = static_objects == StaticObject.RECIPE_INDICATOR
@@ -357,9 +487,10 @@ class OvercookedV2(MultiAgentEnv):
         inventory_layers = []
         recipe_layers = []
 
-
-        tmp_inventory = jnp.zeros_like(ingredients).at[state.agents.pos.y, state.agents.pos.x].set(
-            state.agents.inventory
+        tmp_inventory = (
+            jnp.zeros_like(ingredients)
+            .at[state.agents.pos.y, state.agents.pos.x]
+            .set(state.agents.inventory)
         )
         inventory_layers = _ingridient_layers(tmp_inventory)
 
@@ -402,7 +533,14 @@ class OvercookedV2(MultiAgentEnv):
         #     all_agent_layer,
         # ]
 
-        all_layers = agent_layers + static_layers + ingredients_layers + inventory_layers + recipe_layers + extra_layers
+        all_layers = (
+            agent_layers
+            + static_layers
+            + ingredients_layers
+            + inventory_layers
+            + recipe_layers
+            + extra_layers
+        )
 
         obs = jnp.stack(
             all_layers,
