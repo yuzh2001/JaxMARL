@@ -1,6 +1,6 @@
 from collections import OrderedDict
-from enum import IntEnum
-from typing import Optional, Union
+from enum import IntEnum, Enum
+from typing import List, Optional, Union
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -18,25 +18,23 @@ from jaxmarl.environments.overcooked_v2.common import (
     Position,
     Agent,
 )
+from jaxmarl.environments.overcooked_v2.encoding import (
+    encode_ingreidients,
+    encode_object,
+    encoded_ingreidients_num,
+    encoded_object_num,
+)
 from jaxmarl.environments.overcooked_v2.layouts import overcooked_v2_layouts, Layout
+from jaxmarl.environments.overcooked_v2.settings import (
+    DELIVERY_REWARD,
+    POT_COOK_TIME,
+    SHAPED_REWARDS,
+)
 from jaxmarl.environments.overcooked_v2.utils import (
     compute_view_box,
     tree_select,
     get_possible_recipes,
 )
-
-
-URGENCY_CUTOFF = 40  # When this many time steps remain, the urgency layer is flipped on
-DELIVERY_REWARD = 20
-POT_COOK_TIME = 20  # Time it takes to cook a pot
-
-
-SHAPED_REWARDS = {
-    "PLACEMENT_IN_POT": 3,
-    "POT_START_COOKING": 5,
-    "DISH_PICKUP": 5,
-    "PLATE_PICKUP": 3,
-}
 
 
 class Actions(IntEnum):
@@ -62,9 +60,9 @@ ACTION_TO_DIRECTION = (
 )
 
 
-class ObservationType(IntEnum):
-    LEGACY = 0
-    ENCODED = 1
+class ObservationType(str, Enum):
+    SPARSE = "sparse"
+    EMBEDDED = "embedded"
 
 
 @chex.dataclass
@@ -90,7 +88,7 @@ class OvercookedV2(MultiAgentEnv):
         self,
         layout: Union[str, Layout] = "cramped_room",
         max_steps: int = 400,
-        observation_type: ObservationType = ObservationType.LEGACY,
+        observation_type: ObservationType = ObservationType.SPARSE,
         agent_view_size: Optional[int] = None,
         random_reset: bool = False,
         random_agent_positions: bool = False,
@@ -226,11 +224,13 @@ class OvercookedV2(MultiAgentEnv):
             recipe=recipe,
         )
 
-        key, key_randomise = jax.random.split(key)
+        key, key_randomize = jax.random.split(key)
         if self.random_reset:
-            state = self._randomize_state(state, key_randomise)
+            print("Random reset")
+
+            state = self._randomize_state(state, key_randomize)
         elif self.random_agent_positions:
-            state = self._randomize_agent_positions(state, key_randomise)
+            state = self._randomize_agent_positions(state, key_randomize)
 
         obs = self.get_obs(state)
 
@@ -301,11 +301,10 @@ class OvercookedV2(MultiAgentEnv):
             jax.random.split(subkey, num_agents)
         )
 
-        def _sample_pot_states_wrapper(cell, key):
-            is_pot = cell[0] == StaticObject.POT
+        def _sample_grid_states_wrapper(cell, key):
 
             def _sample_pot_states(key):
-                key, key_ing, key_num = jax.random.split(key, 3)
+                key, key_ing, key_num, key_timer = jax.random.split(key, 4)
                 raw_ingridients = jax.random.randint(
                     key_ing, (3,), 0, self.layout.num_ingredients
                 )
@@ -317,7 +316,7 @@ class OvercookedV2(MultiAgentEnv):
 
                 pot_ingridients = jnp.sum(raw_ingridients)
 
-                pot_timer = jax.random.randint(key, (), 0, POT_COOK_TIME) + 1
+                pot_timer = jax.random.randint(key_timer, (), 0, POT_COOK_TIME) + 1
 
                 possible_states = jnp.array(
                     [
@@ -332,11 +331,54 @@ class OvercookedV2(MultiAgentEnv):
                     key, possible_states, p=jnp.array([0.4, 0.35, 0.15, 0.1])
                 )
 
-            return jax.lax.cond(is_pot, _sample_pot_states, lambda _: cell, key)
+            def _sample_counter_state(key):
+                key, key_ing, key_dish = jax.random.split(key, 3)
+
+                ingridient_idx = jax.random.randint(
+                    key_ing, (), 0, self.layout.num_ingredients
+                )
+                dish_idx = jax.random.randint(
+                    key_dish, (), 0, len(self.possible_recipes)
+                )
+                dish = (
+                    DynamicObject.get_recipe_encoding(self.possible_recipes[dish_idx])
+                    | DynamicObject.COOKED
+                    | DynamicObject.PLATE
+                )
+
+                possible_states = jnp.array(
+                    [
+                        DynamicObject.EMPTY,
+                        DynamicObject.PLATE,
+                        DynamicObject.ingredient(ingridient_idx),
+                        dish,
+                    ]
+                )
+
+                ing_layer = jax.random.choice(
+                    key, possible_states, p=jnp.array([0.5, 0.1, 0.3, 0.1])
+                )
+                return cell.at[1].set(ing_layer)
+
+            is_pot = cell[0] == StaticObject.POT
+            is_wall = cell[0] == StaticObject.WALL
+            branch_idx = 1 * is_pot + 2 * is_wall
+
+            return jax.lax.switch(
+                branch_idx,
+                [
+                    lambda _: cell,
+                    lambda key: _sample_pot_states(key),
+                    lambda key: _sample_counter_state(key),
+                ],
+                key,
+            )
 
         key, subkey = jax.random.split(key)
-        key_pots = jax.random.split(subkey, (self.height, self.width))
-        new_grid = jax.vmap(jax.vmap(_sample_pot_states_wrapper))(grid, key_pots)
+        key_grid = jax.random.split(subkey, (self.height, self.width))
+        new_grid = jax.vmap(jax.vmap(_sample_grid_states_wrapper))(grid, key_grid)
+
+        print("new_grid: ", new_grid)
 
         return state.replace(
             agents=agents.replace(inventory=agent_inventories),
@@ -352,9 +394,9 @@ class OvercookedV2(MultiAgentEnv):
         #     case _:
         #         raise ValueError("Invalid observation type")
 
-        if self.observation_type == ObservationType.LEGACY:
+        if self.observation_type == ObservationType.SPARSE:
             all_obs = self.get_obs_legacy(state)
-        elif self.observation_type == ObservationType.ENCODED:
+        elif self.observation_type == ObservationType.EMBEDDED:
             all_obs = self.get_obs_encoded(state)
         else:
             raise ValueError("Invalid observation type")
@@ -395,14 +437,20 @@ class OvercookedV2(MultiAgentEnv):
             view_width = self.width
             view_height = self.height
 
-        if obs_type == ObservationType.LEGACY:
+        if obs_type == ObservationType.SPARSE:
             num_ingredients = self.layout.num_ingredients
             num_layers = 18 + 4 * num_ingredients
             return (view_height, view_width, num_layers)
-        elif obs_type == ObservationType.ENCODED:
-            return (view_height, view_width, 3)
+        elif obs_type == ObservationType.EMBEDDED:
+            return (view_height, view_width, 2)
         else:
-            raise ValueError("Invalid observation type")
+            raise ValueError(f"Invalid observation type: {obs_type}")
+
+    def get_encoded_obs_vocab_sizes(self) -> List[int]:
+        return [
+            encoded_object_num(),
+            encoded_ingreidients_num(self.layout.num_ingredients),
+        ]
 
     def get_obs_encoded(self, state: State) -> Dict[str, chex.Array]:
         """
@@ -437,7 +485,19 @@ class OvercookedV2(MultiAgentEnv):
             pos = agent.pos
             return obs.at[pos.y, pos.x, 0].set(StaticObject.SELF_AGENT)
 
-        return jax.vmap(_agent_obs)(agents)
+        obs_all = jax.vmap(_agent_obs)(agents)
+
+        def _embed_obs(cell):
+            static_obj = cell[0]
+            dynamic_obj = cell[1]
+            extra_info = cell[2]
+
+            enc_obj = encode_object(static_obj, extra_info)
+            enc_ing = encode_ingreidients(dynamic_obj)
+
+            return jnp.array([enc_obj, enc_ing], dtype=jnp.int32)
+
+        return jax.vmap(jax.vmap(jax.vmap(_embed_obs)))(obs_all)
 
     def get_obs_legacy(self, state: State) -> Dict[str, chex.Array]:
 
