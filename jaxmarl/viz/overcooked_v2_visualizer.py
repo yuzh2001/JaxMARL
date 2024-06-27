@@ -6,7 +6,7 @@ import jaxmarl.viz.grid_rendering as rendering
 import jax
 import jax.numpy as jnp
 from jaxmarl.environments.overcooked_v2.common import StaticObject, DynamicObject
-from jaxmarl.environments.overcooked_v2.overcooked import POT_COOK_TIME
+from jaxmarl.environments.overcooked_v2.settings import POT_COOK_TIME
 
 TILE_PIXELS = 32
 
