@@ -132,7 +132,8 @@ class OvercookedV2(MultiAgentEnv):
 
         self.max_steps = max_steps
 
-        self.possible_recipes = get_possible_recipes(layout.num_ingredients)
+        self.possible_recipes = layout.get_possible_recipes()
+
         self.random_reset = random_reset
         self.random_agent_positions = random_agent_positions
 
@@ -967,6 +968,3 @@ class OvercookedV2(MultiAgentEnv):
                 "terminal": spaces.Discrete(2),
             }
         )
-
-    # def max_steps(self) -> int:
-    #     return self.max_steps

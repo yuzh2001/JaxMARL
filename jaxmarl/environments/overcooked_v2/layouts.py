@@ -2,6 +2,7 @@ from jaxmarl.environments.overcooked_v2.common import StaticObject
 import numpy as np
 from typing import List, Tuple, Optional
 from dataclasses import dataclass
+from .utils import get_possible_recipes
 
 cramped_room = """
 WWPWW
@@ -96,6 +97,15 @@ B            AP
 WWWWWWWWWWWWWWW
 """
 
+fun_coordination = """
+WWWWWWWWW
+0   X   2
+W   P   R
+1   B   3
+WWWWWWWWW
+"""
+
+
 @dataclass
 class Layout:
     # agent positions list of positions, tuples (x, y)
@@ -112,8 +122,21 @@ class Layout:
 
     num_ingredients: int
 
+    # If recipe is none, recipes will be sampled from the possible_recipes
+    # If possible_recipes is none, all possible recipes with the available ingredients will be considered
+    possible_recipes: Optional[List[List[int]]]
 
-def layout_grid_to_dict(grid, recipe=None):
+    def get_possible_recipes(self):
+        if self.recipe is not None:
+            possible_recipes = [self.recipe]
+        elif self.possible_recipes is not None:
+            possible_recipes = self.possible_recipes
+        else:
+            possible_recipes = get_possible_recipes(self.num_ingredients)
+        return possible_recipes
+
+
+def layout_grid_to_dict(grid, recipe=None, possible_recipes=None):
     """Assumes `grid` is string representation of the layout, with 1 line per row, and the following symbols:
     W: wall
     A: agent
@@ -131,6 +154,8 @@ def layout_grid_to_dict(grid, recipe=None):
     If `recipe` is provided, it should be a list of ingredient indices, max 3 ingredients per recipe
     If `recipe` is not provided, the recipe will be randomized on reset.
     If the layout does not have a recipe indicator, a fixed `recipe` must be provided.
+
+    If `possible_recipes` is provided, it should be a list of lists of ingredient indices, 3 ingredients per recipe.
     """
 
     rows = grid.split("\n")
@@ -202,6 +227,7 @@ def layout_grid_to_dict(grid, recipe=None):
         height=len(rows),
         recipe=recipe,
         num_ingredients=num_ingredients,
+        possible_recipes=possible_recipes,
     )
 
     return layout
@@ -214,7 +240,9 @@ overcooked_v2_layouts = {
     "asymm_advantages_recipes_center": layout_grid_to_dict(
         asymm_advantages_recipes_center
     ),
-    "asymm_advantages_recipes_right": layout_grid_to_dict(asymm_advantages_recipes_right),
+    "asymm_advantages_recipes_right": layout_grid_to_dict(
+        asymm_advantages_recipes_right
+    ),
     "asymm_advantages_recipes_left": layout_grid_to_dict(asymm_advantages_recipes_left),
     "coord_ring": layout_grid_to_dict(coord_ring, recipe=[0, 0, 0]),
     "forced_coord": layout_grid_to_dict(forced_coord, recipe=[0, 0, 0]),
@@ -222,4 +250,7 @@ overcooked_v2_layouts = {
     "two_rooms": layout_grid_to_dict(two_rooms),
     "two_rooms_simple": layout_grid_to_dict(two_rooms_simple),
     "long_room": layout_grid_to_dict(long_room, recipe=[0, 0, 0]),
+    "fun_coordination": layout_grid_to_dict(
+        fun_coordination, possible_recipes=[[2, 2, 0], [3, 3, 1]]
+    ),
 }
