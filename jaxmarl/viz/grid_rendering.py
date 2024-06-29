@@ -12,8 +12,8 @@ def downsample(img, factor):
     img = img.reshape(
         [img.shape[0] // factor, factor, img.shape[1] // factor, factor, 3]
     )
-    img = img.mean(axis=3)
-    img = img.mean(axis=1)
+    img = img.mean(axis=3, dtype=jnp.uint8)
+    img = img.mean(axis=1, dtype=jnp.uint8)
 
     return img
 
