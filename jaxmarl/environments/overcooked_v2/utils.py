@@ -74,6 +74,5 @@ def compute_enclosed_spaces(empty_mask: jnp.ndarray) -> jnp.ndarray:
         return ~val[0]
 
     initial_val = (False, id_grid)
-
-    res, _ = jax.lax.while_loop(_cond_fun, _body_fun, initial_val)
+    _, res = jax.lax.while_loop(_cond_fun, _body_fun, initial_val)
     return res

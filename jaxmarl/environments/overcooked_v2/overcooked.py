@@ -245,27 +245,32 @@ class OvercookedV2(MultiAgentEnv):
     def _randomize_agent_positions(self, state: State, key: chex.PRNGKey) -> State:
         """Randomize agent positions."""
         num_agents = self.num_agents
-        grid = state.grid
         agents = state.agents
 
-        # Agent positions
-        empty_mask = (grid[:, :, 0] == StaticObject.EMPTY).flatten()
+        def _select_agent_position(taken_mask, x):
+            pos, key = x
 
-        # agent_rechable_space_masks = jax.vmap(
-        #     lambda pos: compute_agent_reachable_space_mask(
-        #         grid[:, :, 0] == StaticObject.EMPTY, pos.x, pos.y
-        #     )
-        # )(agents.pos)
+            allowed_positions = (
+                self.enclosed_spaces == self.enclosed_spaces[pos.y, pos.x]
+            ) & ~taken_mask
+            allowed_positions = allowed_positions.flatten()
 
-        print("agent_rechable_space_masks: ", agent_rechable_space_masks)
+            p = allowed_positions / jnp.sum(allowed_positions)
+            agent_pos_idx = jax.random.choice(key, allowed_positions.size, (), p=p)
+            agent_position = Position(
+                x=agent_pos_idx % self.width, y=agent_pos_idx // self.width
+            )
 
-        p = empty_mask / jnp.sum(empty_mask)
-        agent_pos_indices = jax.random.choice(
-            key, empty_mask.size, (num_agents,), replace=False, p=p
+            new_taken_mask = taken_mask.at[agent_position.y, agent_position.x].set(True)
+            return new_taken_mask, agent_position
+
+        taken_mask = jnp.zeros_like(self.enclosed_spaces, dtype=jnp.bool)
+        keys = jax.random.split(key, num_agents)
+        _, agent_positions = jax.lax.scan(
+            _select_agent_position, taken_mask, (agents.pos, keys)
         )
-        agent_positions = Position(
-            x=agent_pos_indices % self.width, y=agent_pos_indices // self.width
-        )
+
+        print("agent_positions: ", agent_positions)
 
         return state.replace(agents=agents.replace(pos=agent_positions))
 
