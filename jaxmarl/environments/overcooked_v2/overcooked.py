@@ -34,6 +34,7 @@ from jaxmarl.environments.overcooked_v2.utils import (
     compute_view_box,
     tree_select,
     get_possible_recipes,
+    compute_enclosed_spaces,
 )
 
 
@@ -102,7 +103,7 @@ class OvercookedV2(MultiAgentEnv):
             observation_type (ObservationType): The type of observation to return, either LEGACY or ENCODED.
             agent_view_size (Optional[int]): The number of blocks the agent can view in each direction, None for full grid.
             random_reset (bool): Whether to reset the environment with random agent positions, inventories and pot states.
-            random_agent_positions (bool): Whether to randomize agent positions.
+            random_agent_positions (bool): Whether to randomize agent positions. Agents will not be moved outside of their room if they are placed in an enclosed space.
         """
 
         if isinstance(layout, str):
@@ -136,6 +137,10 @@ class OvercookedV2(MultiAgentEnv):
 
         self.random_reset = random_reset
         self.random_agent_positions = random_agent_positions
+
+        self.enclosed_spaces = compute_enclosed_spaces(
+            layout.static_objects == StaticObject.EMPTY,
+        )
 
     def step_env(
         self,
@@ -245,6 +250,15 @@ class OvercookedV2(MultiAgentEnv):
 
         # Agent positions
         empty_mask = (grid[:, :, 0] == StaticObject.EMPTY).flatten()
+
+        # agent_rechable_space_masks = jax.vmap(
+        #     lambda pos: compute_agent_reachable_space_mask(
+        #         grid[:, :, 0] == StaticObject.EMPTY, pos.x, pos.y
+        #     )
+        # )(agents.pos)
+
+        print("agent_rechable_space_masks: ", agent_rechable_space_masks)
+
         p = empty_mask / jnp.sum(empty_mask)
         agent_pos_indices = jax.random.choice(
             key, empty_mask.size, (num_agents,), replace=False, p=p
