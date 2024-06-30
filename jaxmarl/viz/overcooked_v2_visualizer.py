@@ -137,31 +137,45 @@ class OvercookedV2Visualizer:
         ingredient_fn=rendering.point_in_circle(0.5, 0.5, 0.15),
         dish_positions=jnp.array([(0.5, 0.4), (0.4, 0.6), (0.6, 0.6)]),
     ):
-        img_plate = rendering.fill_coords(img, plate_fn, COLORS["white"])
-        img = jax.lax.select(ingredients & DynamicObject.PLATE, img_plate, img)
+        def _no_op(img, ingredients):
+            return img
 
-        # if DynamicObject.is_ingredient(ingredients):
-        idx = DynamicObject.get_ingredient_idx(ingredients)
-        img_ing = rendering.fill_coords(img, ingredient_fn, INGREDIENT_COLORS[idx])
-        img = jax.lax.select(DynamicObject.is_ingredient(ingredients), img_ing, img)
+        def _render_plate(img, ingredients):
+            return rendering.fill_coords(img, plate_fn, COLORS["white"])
 
-        # if ingredients & DynamicObject.COOKED:
-        def _render_cooked_ingredient(img, x):
-            idx, ingredient_idx = x
+        def _render_ingredient(img, ingredients):
+            idx = DynamicObject.get_ingredient_idx(ingredients)
+            return rendering.fill_coords(img, ingredient_fn, INGREDIENT_COLORS[idx])
 
-            color = INGREDIENT_COLORS[ingredient_idx]
-            pos = dish_positions[idx]
-            ingredient_fn = rendering.point_in_circle(pos[0], pos[1], 0.1)
-            img_ing = rendering.fill_coords(img, ingredient_fn, color)
+        def _render_dish(img, ingredients):
+            img = rendering.fill_coords(img, plate_fn, COLORS["white"])
+            ingredient_indices = DynamicObject.get_ingredient_idx_list_jit(ingredients)
 
-            img = jax.lax.select(ingredient_idx != -1, img_ing, img)
-            return img, None
+            for idx, ingredient_idx in enumerate(ingredient_indices):
+                color = INGREDIENT_COLORS[ingredient_idx]
+                pos = dish_positions[idx]
+                ingredient_fn = rendering.point_in_circle(pos[0], pos[1], 0.1)
+                img_ing = rendering.fill_coords(img, ingredient_fn, color)
 
-        ingredient_indices = DynamicObject.get_ingredient_idx_list_jit(ingredients)
-        img, _ = jax.lax.scan(
-            _render_cooked_ingredient,
+                img = jax.lax.select(ingredient_idx != -1, img_ing, img)
+
+            return img
+
+        branches = jnp.array(
+            [
+                ingredients == 0,
+                ingredients == DynamicObject.PLATE,
+                DynamicObject.is_ingredient(ingredients),
+                ingredients & DynamicObject.COOKED,
+            ]
+        )
+        branch_idx = jnp.argmax(branches)
+
+        img = jax.lax.switch(
+            branch_idx,
+            [_no_op, _render_plate, _render_ingredient, _render_dish],
             img,
-            (jnp.arange(len(ingredient_indices)), ingredient_indices),
+            ingredients,
         )
 
         return img

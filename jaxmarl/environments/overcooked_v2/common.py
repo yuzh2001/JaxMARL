@@ -76,29 +76,29 @@ class DynamicObject(IntEnum):
     @staticmethod
     def get_ingredient_idx_list_jit(obj):
 
-        def loop_body(carry):
+        def _loop_body(carry):
             obj, pos, idx, res = carry
             count = obj & 0x3
 
             cond = jnp.arange(MAX_INGREDIENTS)
-            cond = (cond < pos) & (res == -1) & (cond < pos + count)
+            cond = (cond >= pos) & (res == -1) & (cond < pos + count)
 
             res = jnp.where(
                 cond,
-                res,
                 idx,
+                res,
             )
 
             return (obj >> 2, pos + count, idx + 1, res)
 
-        def loop_cond(carry):
+        def _loop_cond(carry):
             obj, pos, _, _ = carry
             return (obj > 0) & (pos < MAX_INGREDIENTS)
 
         initial_res = jnp.full((MAX_INGREDIENTS,), -1, dtype=jnp.int32)
         carry = (obj >> 2, 0, 0, initial_res)
 
-        val = jax.lax.while_loop(loop_cond, loop_body, carry)
+        val = jax.lax.while_loop(_loop_cond, _loop_body, carry)
         return val[-1]
 
     @staticmethod
@@ -106,14 +106,14 @@ class DynamicObject(IntEnum):
 
         def _body_fun(val):
             obj, idx, res = val
-            new_res = jax.lax.select(obj & 0x3, idx, res)
+            new_res = jax.lax.select(obj & 0x3 != 0, idx, res)
             return (obj >> 2, idx + 1, new_res)
 
         def _cond_fun(val):
             obj, _, res = val
             return (obj > 0) & (res == -1)
 
-        initial_val = (obj, 0, -1)
+        initial_val = (obj >> 2, 0, -1)
         val = jax.lax.while_loop(_cond_fun, _body_fun, initial_val)
         return val[-1]
 
