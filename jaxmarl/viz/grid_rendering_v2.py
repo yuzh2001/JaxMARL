@@ -128,7 +128,6 @@ def highlight_img(img, color=(255, 255, 255), alpha=0.30):
     """
     Add highlighting to an image
     """
-    blend_img = img + alpha * (jnp.array(color, dtype=jnp.uint8) - img)
-    blend_img = jnp.clip(blend_img, 0, 255).astype(jnp.uint8)
-    img = img.at[:, :, :].set(blend_img)
-    return img
+    blend_img = alpha * (jnp.array(color, dtype=jnp.uint8) - img)
+    res_img = jnp.clip(img + blend_img, 0, 255).astype(jnp.uint8)
+    return res_img

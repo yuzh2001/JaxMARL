@@ -114,19 +114,24 @@ class OvercookedV2Visualizer:
         grid = grid.at[:, :, 1].set(new_ingredients_layer)
 
         highlight_mask = jnp.zeros(grid.shape[:2], dtype=bool)
-        # if self.agent_view_size:
-        #     for x, y in zip(agents.pos.x, agents.pos.y):
-        #         x_low, x_high, y_low, y_high = compute_view_box(
-        #             x, y, self.agent_view_size, grid.shape[0], grid.shape[1]
-        #         )
-        #         # highlight_mask[y_low:y_high, x_low:x_high] = True
-        #         highlight_mask = highlight_mask.at[y_low:y_high, x_low:x_high].set(True)
+        if agent_view_size:
+            for x, y in zip(agents.pos.x, agents.pos.y):
+                x_low, x_high, y_low, y_high = compute_view_box(
+                    x, y, agent_view_size, grid.shape[0], grid.shape[1]
+                )
+
+                row_mask = jnp.arange(grid.shape[0])
+                col_mask = jnp.arange(grid.shape[1])
+
+                row_mask = (row_mask >= y_low) & (row_mask < y_high)
+                col_mask = (col_mask >= x_low) & (col_mask < x_high)
+
+                agent_mask = row_mask[:, None] & col_mask[None, :]
+
+                highlight_mask |= agent_mask
 
         # Render the whole grid
-        img = self._render_grid(
-            grid,
-            highlight_mask=highlight_mask,
-        )
+        img = self._render_grid(grid, highlight_mask)
         return img
 
     @staticmethod
@@ -391,8 +396,8 @@ class OvercookedV2Visualizer:
 
         img = OvercookedV2Visualizer._render_cell(obj, img)
 
-        # if highlight:
-        #     rendering.highlight_img(img)
+        img_highlight = rendering.highlight_img(img, highlight)
+        img = jax.lax.select(highlight, img_highlight, img)
 
         # Downsample the image to perform supersampling/anti-aliasing
         img = rendering.downsample(img, self.subdivs)
@@ -405,12 +410,9 @@ class OvercookedV2Visualizer:
     def _render_grid(
         self,
         grid,
-        highlight_mask=None,
+        highlight_mask,
     ):
-        if highlight_mask is None:
-            highlight_mask = jnp.zeros(shape=grid.shape[:2], dtype=bool)
-
-        img_grid = jax.vmap(jax.vmap(self._render_tile))(grid)
+        img_grid = jax.vmap(jax.vmap(self._render_tile))(grid, highlight_mask)
 
         print("img_grid", img_grid.shape)
 
