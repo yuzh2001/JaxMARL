@@ -55,7 +55,7 @@ class InteractiveOvercookedV2:
         self._step(action)
 
     def _redraw(self):
-        self.viz.render(self.state, self.env.agent_view_size)
+        self.viz.render(self.state, agent_view_size=self.env.agent_view_size)
 
     def _reset(self):
         self.key, key = jax.random.split(self.key)
