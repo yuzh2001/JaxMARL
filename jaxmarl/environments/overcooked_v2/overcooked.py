@@ -33,7 +33,6 @@ from jaxmarl.environments.overcooked_v2.settings import (
 from jaxmarl.environments.overcooked_v2.utils import (
     compute_view_box,
     tree_select,
-    get_possible_recipes,
     compute_enclosed_spaces,
 )
 
@@ -133,7 +132,9 @@ class OvercookedV2(MultiAgentEnv):
 
         self.max_steps = max_steps
 
-        self.possible_recipes = layout.get_possible_recipes()
+        self.possible_recipes = jnp.array(
+            layout.get_possible_recipes(), dtype=jnp.int32
+        )
 
         self.random_reset = random_reset
         self.random_agent_positions = random_agent_positions

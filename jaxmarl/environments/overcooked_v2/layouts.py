@@ -2,7 +2,7 @@ from jaxmarl.environments.overcooked_v2.common import StaticObject
 import numpy as np
 from typing import List, Tuple, Optional
 from dataclasses import dataclass
-from .utils import get_possible_recipes
+import itertools
 
 cramped_room = """
 WWPWW
@@ -100,7 +100,7 @@ WWWWWWWWWWWWWWW
 fun_coordination = """
 WWWWWWWWW
 0   X   2
-W   P   R
+RA  P  AW
 1   B   3
 WWWWWWWWW
 """
@@ -126,13 +126,26 @@ class Layout:
     # If possible_recipes is none, all possible recipes with the available ingredients will be considered
     possible_recipes: Optional[List[List[int]]]
 
+    @staticmethod
+    def _get_possible_recipes(num_ingredients: int) -> List[List[int]]:
+        """
+        Get all possible recipes given the number of ingredients.
+        """
+        available_ingredients = list(range(num_ingredients)) * 3
+        raw_combinations = itertools.combinations(available_ingredients, 3)
+        unique_recipes = set(
+            tuple(sorted(combination)) for combination in raw_combinations
+        )
+
+        return [list(recipe) for recipe in unique_recipes]
+
     def get_possible_recipes(self):
         if self.recipe is not None:
             possible_recipes = [self.recipe]
         elif self.possible_recipes is not None:
             possible_recipes = self.possible_recipes
         else:
-            possible_recipes = get_possible_recipes(self.num_ingredients)
+            possible_recipes = self._get_possible_recipes(self.num_ingredients)
         return possible_recipes
 
 

@@ -160,7 +160,6 @@ class OvercookedV2LogWrapper(JaxMARLWrapper):
         batch_reward = self._batchify_floats(reward)
         new_episode_return = state.episode_returns + self._batchify_floats(reward)
         new_episode_length = state.episode_lengths + 1
-        new_won_episode = (batch_reward >= 1.0).astype(jnp.float32)
 
         updated_recipe_returns = {
             id: jax.lax.select(
