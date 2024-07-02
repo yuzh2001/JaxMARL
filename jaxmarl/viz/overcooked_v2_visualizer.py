@@ -78,10 +78,16 @@ class OvercookedV2Visualizer:
             state_seq, agent_view_size
         )
         # print("frame_seq", frame_seq)
-        print("frame_seq.shape", frame_seq.shape)
-        print("frame_seq.dtype", frame_seq.dtype)
+        # print("frame_seq.shape", frame_seq.shape)
+        # print("frame_seq.dtype", frame_seq.dtype)
 
         imageio.mimsave(filename, frame_seq, "GIF", duration=0.5)
+
+    def render_sequence(self, state_seq, agent_view_size=None):
+        frame_seq = jax.vmap(self._render_state, in_axes=(0, None))(
+            state_seq, agent_view_size
+        )
+        return frame_seq
 
     @partial(jax.jit, static_argnums=(0, 2))
     def _render_state(self, state, agent_view_size=None):
@@ -414,7 +420,7 @@ class OvercookedV2Visualizer:
     ):
         img_grid = jax.vmap(jax.vmap(self._render_tile))(grid, highlight_mask)
 
-        print("img_grid", img_grid.shape)
+        # print("img_grid", img_grid.shape)
 
         grid_rows, grid_cols, tile_height, tile_width, channels = img_grid.shape
 
@@ -422,7 +428,7 @@ class OvercookedV2Visualizer:
             grid_rows * tile_height, grid_cols * tile_width, channels
         )
 
-        print("big_image", big_image.shape)
+        # print("big_image", big_image.shape)
 
         return big_image
 

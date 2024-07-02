@@ -32,7 +32,7 @@ def fill_coords(img, fn, color):
         return fn(xf, yf)
 
     ys, xs = jnp.indices(img.shape[:2])
-    mask = jax.vmap(jax.vmap(_mask_fn, in_axes=0), in_axes=1)(ys, xs)
+    mask = jax.vmap(jax.vmap(_mask_fn))(ys, xs)
 
     color_img = jnp.full_like(img, color)
     return jnp.where(mask[:, :, None], color_img, img)
