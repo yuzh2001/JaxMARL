@@ -402,7 +402,7 @@ class OvercookedV2Visualizer:
 
         img = OvercookedV2Visualizer._render_cell(obj, img)
 
-        img_highlight = rendering.highlight_img(img, highlight)
+        img_highlight = rendering.highlight_img(img)
         img = jax.lax.select(highlight, img_highlight, img)
 
         # Downsample the image to perform supersampling/anti-aliasing
