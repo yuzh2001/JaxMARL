@@ -105,6 +105,15 @@ RA  P  AW
 WWWWWWWWW
 """
 
+more_fun_coordination = """
+WWWWWWWWW
+W   X   W
+RA  P  A1
+0   P   2
+W   B   W
+WWWWWWWWW
+"""
+
 
 @dataclass
 class Layout:
@@ -264,6 +273,9 @@ overcooked_v2_layouts = {
     "two_rooms_simple": layout_grid_to_dict(two_rooms_simple),
     "long_room": layout_grid_to_dict(long_room, recipe=[0, 0, 0]),
     "fun_coordination": layout_grid_to_dict(
-        fun_coordination, possible_recipes=[[2, 2, 0], [3, 3, 1]]
+        fun_coordination, possible_recipes=[[0, 0, 2], [1, 1, 3]]
+    ),
+    "more_fun_coordination": layout_grid_to_dict(
+        more_fun_coordination, possible_recipes=[[0, 1, 1], [0, 2, 2]]
     ),
 }
