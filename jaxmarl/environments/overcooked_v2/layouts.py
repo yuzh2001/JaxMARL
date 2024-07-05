@@ -122,12 +122,6 @@ class Layout:
 
     # width x height grid with static items
     static_objects: np.ndarray
-    width: int
-    height: int
-
-    # If none recipe will be randomized on reset
-    # If present recipe should be a list of ingredient indices, max 3 ingredients per recipe
-    recipe: Optional[List[int]]
 
     num_ingredients: int
 
@@ -135,8 +129,24 @@ class Layout:
     # If possible_recipes is none, all possible recipes with the available ingredients will be considered
     possible_recipes: Optional[List[List[int]]]
 
+    def __post_init__(self):
+        if len(self.agent_positions) == 0:
+            raise ValueError("At least one agent position must be provided")
+        if self.num_ingredients < 1:
+            raise ValueError("At least one ingredient must be available")
+        if self.possible_recipes is None:
+            self.possible_recipes = self._get_all_possible_recipes(self.num_ingredients)
+
+    @property
+    def height(self):
+        return self.static_objects.shape[0]
+
+    @property
+    def width(self):
+        return self.static_objects.shape[1]
+
     @staticmethod
-    def _get_possible_recipes(num_ingredients: int) -> List[List[int]]:
+    def _get_all_possible_recipes(num_ingredients: int) -> List[List[int]]:
         """
         Get all possible recipes given the number of ingredients.
         """
@@ -148,17 +158,8 @@ class Layout:
 
         return [list(recipe) for recipe in unique_recipes]
 
-    def get_possible_recipes(self):
-        if self.recipe is not None:
-            possible_recipes = [self.recipe]
-        elif self.possible_recipes is not None:
-            possible_recipes = self.possible_recipes
-        else:
-            possible_recipes = self._get_possible_recipes(self.num_ingredients)
-        return possible_recipes
 
-
-def layout_grid_to_dict(grid, recipe=None, possible_recipes=None):
+def layout_grid_to_dict(grid, possible_recipes=None):
     """Assumes `grid` is string representation of the layout, with 1 line per row, and the following symbols:
     W: wall
     A: agent
@@ -232,11 +233,13 @@ def layout_grid_to_dict(grid, recipe=None, possible_recipes=None):
 
     # TODO: add some sanity checks - e.g. agent must exist, surrounded by walls, etc.
 
-    if recipe is not None:
-        if not (0 < len(recipe) <= 3):
-            raise ValueError("Recipe must be a list of length 1, 2, or 3")
-        if [i for i in recipe if i < 0 or i >= num_ingredients]:
-            raise ValueError("Invalid ingredient index in recipe")
+    if possible_recipes is not None:
+        if not isinstance(possible_recipes, list):
+            raise ValueError("possible_recipes must be a list")
+        if not all(isinstance(recipe, list) for recipe in possible_recipes):
+            raise ValueError("possible_recipes must be a list of lists")
+        if not all(len(recipe) == 3 for recipe in possible_recipes):
+            raise ValueError("All recipes must be of length 3")
     elif not includes_recipe_indicator:
         raise ValueError(
             "Layout does not include a recipe indicator, a fixed recipe must be provided"
@@ -245,9 +248,6 @@ def layout_grid_to_dict(grid, recipe=None, possible_recipes=None):
     layout = Layout(
         agent_positions=agent_positions,
         static_objects=static_objects,
-        width=len(rows[0]),
-        height=len(rows),
-        recipe=recipe,
         num_ingredients=num_ingredients,
         possible_recipes=possible_recipes,
     )
@@ -256,9 +256,11 @@ def layout_grid_to_dict(grid, recipe=None, possible_recipes=None):
 
 
 overcooked_v2_layouts = {
-    "cramped_room": layout_grid_to_dict(cramped_room, recipe=[0, 0, 0]),
+    "cramped_room": layout_grid_to_dict(cramped_room, possible_recipes=[[0, 0, 0]]),
     "cramped_room_v2": layout_grid_to_dict(cramped_room_v2),
-    "asymm_advantages": layout_grid_to_dict(asymm_advantages, recipe=[0, 0, 0]),
+    "asymm_advantages": layout_grid_to_dict(
+        asymm_advantages, possible_recipes=[[0, 0, 0]]
+    ),
     "asymm_advantages_recipes_center": layout_grid_to_dict(
         asymm_advantages_recipes_center
     ),
@@ -266,12 +268,14 @@ overcooked_v2_layouts = {
         asymm_advantages_recipes_right
     ),
     "asymm_advantages_recipes_left": layout_grid_to_dict(asymm_advantages_recipes_left),
-    "coord_ring": layout_grid_to_dict(coord_ring, recipe=[0, 0, 0]),
-    "forced_coord": layout_grid_to_dict(forced_coord, recipe=[0, 0, 0]),
-    "counter_circuit": layout_grid_to_dict(counter_circuit_grid, recipe=[0, 0, 0]),
+    "coord_ring": layout_grid_to_dict(coord_ring, possible_recipes=[[0, 0, 0]]),
+    "forced_coord": layout_grid_to_dict(forced_coord, possible_recipes=[[0, 0, 0]]),
+    "counter_circuit": layout_grid_to_dict(
+        counter_circuit_grid, possible_recipes=[[0, 0, 0]]
+    ),
     "two_rooms": layout_grid_to_dict(two_rooms),
     "two_rooms_simple": layout_grid_to_dict(two_rooms_simple),
-    "long_room": layout_grid_to_dict(long_room, recipe=[0, 0, 0]),
+    "long_room": layout_grid_to_dict(long_room, possible_recipes=[[0, 0, 0]]),
     "fun_coordination": layout_grid_to_dict(
         fun_coordination, possible_recipes=[[0, 0, 2], [1, 1, 3]]
     ),
