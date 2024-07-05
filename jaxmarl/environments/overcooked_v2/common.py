@@ -177,3 +177,26 @@ class Agent:
     @staticmethod
     def from_position(pos):
         return Agent(pos, jnp.array([Direction.UP]), jnp.zeros((1,)))
+
+
+class Actions(IntEnum):
+    # Turn left, turn right, move forward
+    right = 0
+    down = 1
+    left = 2
+    up = 3
+    stay = 4
+    interact = 5
+
+
+ACTION_TO_DIRECTION = (
+    jnp.full((len(Actions),), -1)
+    .at[Actions.right]
+    .set(Direction.RIGHT)
+    .at[Actions.down]
+    .set(Direction.DOWN)
+    .at[Actions.left]
+    .set(Direction.LEFT)
+    .at[Actions.up]
+    .set(Direction.UP)
+)

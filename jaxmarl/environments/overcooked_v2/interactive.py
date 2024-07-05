@@ -1,7 +1,8 @@
 import argparse
 import jax
 import jax.numpy as jnp
-from jaxmarl.environments.overcooked_v2.overcooked import OvercookedV2, Actions
+from jaxmarl.environments.overcooked_v2.common import Actions
+from jaxmarl.environments.overcooked_v2.overcooked import OvercookedV2
 from jaxmarl.environments.overcooked_v2.layouts import overcooked_v2_layouts as layouts
 from jaxmarl.viz.overcooked_v2_visualizer import OvercookedV2Visualizer
 
