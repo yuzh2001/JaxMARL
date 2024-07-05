@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from enum import IntEnum, Enum
+from enum import Enum
 from typing import List, Optional, Union
 import numpy as np
 import jax
@@ -12,6 +12,8 @@ import chex
 from flax import struct
 from flax.core.frozen_dict import FrozenDict
 from jaxmarl.environments.overcooked_v2.common import (
+    ACTION_TO_DIRECTION,
+    Actions,
     StaticObject,
     DynamicObject,
     Direction,
@@ -34,29 +36,6 @@ from jaxmarl.environments.overcooked_v2.utils import (
     compute_view_box,
     tree_select,
     compute_enclosed_spaces,
-)
-
-
-class Actions(IntEnum):
-    # Turn left, turn right, move forward
-    right = 0
-    down = 1
-    left = 2
-    up = 3
-    stay = 4
-    interact = 5
-
-
-ACTION_TO_DIRECTION = (
-    jnp.full((len(Actions),), -1)
-    .at[Actions.right]
-    .set(Direction.RIGHT)
-    .at[Actions.down]
-    .set(Direction.DOWN)
-    .at[Actions.left]
-    .set(Direction.LEFT)
-    .at[Actions.up]
-    .set(Direction.UP)
 )
 
 
@@ -93,6 +72,8 @@ class OvercookedV2(MultiAgentEnv):
         random_reset: bool = False,
         random_agent_positions: bool = False,
         start_cooking_interaction: bool = False,
+        negative_rewards: bool = False,
+        sample_recipe_on_delivery: bool = False,
     ):
         """
         Initializes the OvercookedV2 environment.
@@ -105,6 +86,8 @@ class OvercookedV2(MultiAgentEnv):
             random_reset (bool): Whether to reset the environment with random agent positions, inventories and pot states.
             random_agent_positions (bool): Whether to randomize agent positions. Agents will not be moved outside of their room if they are placed in an enclosed space.
             start_cooking_interaction (bool): If false the pot starts cooking automatically once three ingredients are added, if true the pot starts cooking only after the agent interacts with it.
+            negative_rewards (bool): Whether to use negative rewards.
+            sample_recipe_on_delivery (bool): Whether to sample a new recipe when a delivery is made. Default is on reset only.
         """
 
         if isinstance(layout, str):
@@ -134,15 +117,17 @@ class OvercookedV2(MultiAgentEnv):
 
         self.max_steps = max_steps
 
-        self.possible_recipes = jnp.array(
-            layout.get_possible_recipes(), dtype=jnp.int32
-        )
+        self.possible_recipes = jnp.array(layout.possible_recipes, dtype=jnp.int32)
 
         self.random_reset = random_reset
         self.random_agent_positions = random_agent_positions
 
         self.start_cooking_interaction = jnp.array(
             start_cooking_interaction, dtype=jnp.bool
+        )
+        self.negative_rewards = jnp.array(negative_rewards, dtype=jnp.bool)
+        self.sample_recipe_on_delivery = jnp.array(
+            sample_recipe_on_delivery, dtype=jnp.bool
         )
 
         self.enclosed_spaces = compute_enclosed_spaces(
@@ -212,22 +197,8 @@ class OvercookedV2(MultiAgentEnv):
             inventory=jnp.zeros((num_agents,), dtype=jnp.int32),
         )
 
-        if layout.recipe is not None:
-            fixed_recipe = jnp.array(layout.recipe)
-        else:
-            key, subkey = jax.random.split(key)
-            # fixed_recipe = jax.random.randint(subkey, (3,), 0, layout.num_ingredients)
-
-            # generate random index for self.possible_recipes
-            fixed_recipe_idx = jax.random.randint(
-                subkey, (), 0, len(self.possible_recipes)
-            )
-            fixed_recipe = self.possible_recipes[fixed_recipe_idx]
-            # print("fixed_recipe: ", fixed_recipe)
-
-        recipe = DynamicObject.get_recipe_encoding(fixed_recipe)
-
-        # print("Recipe: ", fixed_recipe)
+        key, subkey = jax.random.split(key)
+        recipe = self._sample_recipe(subkey)
 
         state = State(
             agents=agents,
@@ -246,6 +217,14 @@ class OvercookedV2(MultiAgentEnv):
         obs = self.get_obs(state)
 
         return lax.stop_gradient(obs), lax.stop_gradient(state)
+
+    def _sample_recipe(self, key: chex.PRNGKey) -> int:
+        fixed_recipe_idx = jax.random.randint(
+            key, (), 0, self.possible_recipes.shape[0]
+        )
+        fixed_recipe = self.possible_recipes[fixed_recipe_idx]
+
+        return DynamicObject.get_recipe_encoding(fixed_recipe)
 
     def _randomize_agent_positions(self, state: State, key: chex.PRNGKey) -> State:
         """Randomize agent positions."""
@@ -736,27 +715,33 @@ class OvercookedV2(MultiAgentEnv):
             is_interact = action == Actions.interact
 
             def _interact(carry, agent):
-                grid, reward = carry
+                grid, correct_delivery, reward = carry
 
-                # print("interact: ", agent.pos, agent.dir)
-
-                new_grid, new_agent, interact_reward, shaped_reward = (
-                    self.process_interact(
-                        grid, agent, new_agents.inventory, state.recipe
-                    )
+                (
+                    new_grid,
+                    new_agent,
+                    new_correct_delivery,
+                    interact_reward,
+                    shaped_reward,
+                ) = self.process_interact(
+                    grid, agent, new_agents.inventory, state.recipe
                 )
 
-                carry = (new_grid, reward + interact_reward)
+                carry = (
+                    new_grid,
+                    correct_delivery | new_correct_delivery,
+                    reward + interact_reward,
+                )
                 return carry, (new_agent, shaped_reward)
 
             return jax.lax.cond(
                 is_interact, _interact, lambda c, a: (c, (a, 0.0)), carry, agent
             )
 
-        carry = (grid, 0.0)
+        carry = (grid, False, 0.0)
         xs = (new_agents, actions)
-        (new_grid, reward), (new_agents, shaped_rewards) = jax.lax.scan(
-            _interact_wrapper, carry, xs
+        (new_grid, new_correct_delivery, reward), (new_agents, shaped_rewards) = (
+            jax.lax.scan(_interact_wrapper, carry, xs)
         )
         # shaped_rewards = jnp.full_like(shaped_rewards, jnp.sum(shaped_rewards))
         # shaped_rewards = jnp.zeros_like(shaped_rewards)
@@ -777,10 +762,20 @@ class OvercookedV2(MultiAgentEnv):
 
         new_grid = jax.vmap(jax.vmap(_cook_wrapper))(new_grid)
 
+        key, subkey = jax.random.split(key)
+        new_recipe = jax.lax.cond(
+            new_correct_delivery & self.sample_recipe_on_delivery,
+            lambda _, key: self._sample_recipe(key),
+            lambda r, _: r,
+            state.recipe,
+            subkey,
+        )
+
         return (
             state.replace(
                 agents=new_agents,
                 grid=new_grid,
+                recipe=new_recipe,
             ),
             reward,
             shaped_rewards,
@@ -865,7 +860,7 @@ class OvercookedV2(MultiAgentEnv):
             # * jax.lax.select(
             #     is_pot_placement_useful,
             #     1,
-            #     -1,
+            #     -1 if self.negative_rewards else 0,
             # )
             * SHAPED_REWARDS["PLACEMENT_IN_POT"]
         )
@@ -889,12 +884,14 @@ class OvercookedV2(MultiAgentEnv):
         pot_full_after_drop = DynamicObject.ingredient_count(new_ingredients) == 3
 
         successful_pot_start_cooking = (
-            pot_is_idle * ~object_has_no_ingredients * inventory_is_empty
+            pot_is_idle
+            * ~object_has_no_ingredients
+            * inventory_is_empty
+            * self.start_cooking_interaction
         )
         is_pot_start_cooking_useful = interact_ingredients == recipe
         shaped_reward += (
-            self.start_cooking_interaction
-            * successful_pot_start_cooking
+            successful_pot_start_cooking
             * is_pot_start_cooking_useful
             # * jax.lax.select(
             #     is_pot_start_cooking_useful,
@@ -923,7 +920,13 @@ class OvercookedV2(MultiAgentEnv):
         is_correct_recipe = inventory == plated_recipe
         # print("is_correct_recipe: ", is_correct_recipe)
         reward = (
-            jnp.array(successful_delivery & is_correct_recipe, dtype=float)
+            jnp.array(successful_delivery, dtype=float)
+            * jax.lax.select(
+                is_correct_recipe,
+                1,
+                -1 if self.negative_rewards else 0,
+            )
+            # * is_correct_recipe
             * DELIVERY_REWARD
         )
 
@@ -944,7 +947,8 @@ class OvercookedV2(MultiAgentEnv):
             * SHAPED_REWARDS["PLATE_PICKUP"]
         )
 
-        return new_grid, new_agent, reward, shaped_reward
+        correct_delivery = successful_delivery & is_correct_recipe
+        return new_grid, new_agent, correct_delivery, reward, shaped_reward
 
     def is_terminal(self, state: State) -> bool:
         """Check whether state is terminal."""
