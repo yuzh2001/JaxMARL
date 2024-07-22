@@ -13,6 +13,7 @@ from flax import struct
 from flax.core.frozen_dict import FrozenDict
 from jaxmarl.environments.overcooked_v2.common import (
     ACTION_TO_DIRECTION,
+    MAX_INGREDIENTS,
     Actions,
     StaticObject,
     DynamicObject,
@@ -123,11 +124,11 @@ class OvercookedV2(MultiAgentEnv):
         self.random_agent_positions = random_agent_positions
 
         self.start_cooking_interaction = jnp.array(
-            start_cooking_interaction, dtype=jnp.bool
+            start_cooking_interaction, dtype=jnp.bool_
         )
-        self.negative_rewards = jnp.array(negative_rewards, dtype=jnp.bool)
+        self.negative_rewards = jnp.array(negative_rewards, dtype=jnp.bool_)
         self.sample_recipe_on_delivery = jnp.array(
-            sample_recipe_on_delivery, dtype=jnp.bool
+            sample_recipe_on_delivery, dtype=jnp.bool_
         )
 
         self.enclosed_spaces = compute_enclosed_spaces(
@@ -222,6 +223,7 @@ class OvercookedV2(MultiAgentEnv):
         fixed_recipe_idx = jax.random.randint(
             key, (), 0, self.possible_recipes.shape[0]
         )
+
         fixed_recipe = self.possible_recipes[fixed_recipe_idx]
 
         return DynamicObject.get_recipe_encoding(fixed_recipe)
@@ -248,15 +250,19 @@ class OvercookedV2(MultiAgentEnv):
             new_taken_mask = taken_mask.at[agent_position.y, agent_position.x].set(True)
             return new_taken_mask, agent_position
 
-        taken_mask = jnp.zeros_like(self.enclosed_spaces, dtype=jnp.bool)
-        keys = jax.random.split(key, num_agents)
+        taken_mask = jnp.zeros_like(self.enclosed_spaces, dtype=jnp.bool_)
+        key, subkey = jax.random.split(key)
+        keys = jax.random.split(subkey, num_agents)
         _, agent_positions = jax.lax.scan(
             _select_agent_position, taken_mask, (agents.pos, keys)
         )
 
         # print("agent_positions: ", agent_positions)
 
-        return state.replace(agents=agents.replace(pos=agent_positions))
+        key, subkey = jax.random.split(key)
+        directions = jax.random.randint(subkey, (num_agents,), 0, len(Direction))
+
+        return state.replace(agents=agents.replace(pos=agent_positions, dir=directions))
 
     def _randomize_state(self, state: State, key: chex.PRNGKey) -> State:
         """Randomize the state of the environment."""
@@ -316,18 +322,22 @@ class OvercookedV2(MultiAgentEnv):
 
                 partial_recipe = jax.random.randint(key_num, (), 1, 4)
                 mask = jnp.arange(3) < partial_recipe
-                raw_ingridients *= mask
 
-                pot_ingridients = jnp.sum(raw_ingridients)
+                pot_ingridients_masked = jnp.sum(raw_ingridients * mask)
+                if self.start_cooking_interaction:
+                    pot_ingridients_full = pot_ingridients_masked
+                else:
+                    # without an interaction the pot is always full when cooking
+                    pot_ingridients_full = jnp.sum(raw_ingridients)
 
                 pot_timer = jax.random.randint(key_timer, (), 0, POT_COOK_TIME) + 1
 
                 possible_states = jnp.array(
                     [
                         cell,
-                        [cell[0], pot_ingridients, 0],
-                        [cell[0], pot_ingridients, pot_timer],
-                        [cell[0], pot_ingridients | DynamicObject.COOKED, 0],
+                        [cell[0], pot_ingridients_masked, 0],
+                        [cell[0], pot_ingridients_full, pot_timer],
+                        [cell[0], pot_ingridients_full | DynamicObject.COOKED, 0],
                     ]
                 )
                 # 0 for do nothing, 1 for not started, 2 for started cooking, 3 for finished cooking
@@ -390,20 +400,13 @@ class OvercookedV2(MultiAgentEnv):
         )
 
     def get_obs(self, state: State) -> Dict[str, chex.Array]:
-        # match self.observation_type:
-        #     case ObservationType.LEGACY:
-        #         all_obs = self.get_obs_legacy(state)
-        #     case ObservationType.ENCODED:
-        #         all_obs = self.get_obs_encoded(state)
-        #     case _:
-        #         raise ValueError("Invalid observation type")
-
-        if self.observation_type == ObservationType.SPARSE:
-            all_obs = self.get_obs_legacy(state)
-        elif self.observation_type == ObservationType.EMBEDDED:
-            all_obs = self.get_obs_encoded(state)
-        else:
-            raise ValueError("Invalid observation type")
+        match self.observation_type:
+            case ObservationType.SPARSE:
+                all_obs = self.get_obs_legacy(state)
+            case ObservationType.ENCODED:
+                all_obs = self.get_obs_encoded(state)
+            case _:
+                raise ValueError("Invalid observation type")
 
         def _mask_obs(obs, agent):
             view_size = self.agent_view_size
@@ -443,7 +446,7 @@ class OvercookedV2(MultiAgentEnv):
 
         if obs_type == ObservationType.SPARSE:
             num_ingredients = self.layout.num_ingredients
-            num_layers = 18 + 4 * num_ingredients
+            num_layers = 17 + 4 * (num_ingredients + 2)
             return (view_height, view_width, num_layers)
         elif obs_type == ObservationType.EMBEDDED:
             return (view_height, view_width, 2)
@@ -510,28 +513,30 @@ class OvercookedV2(MultiAgentEnv):
         num_ingredients = self.layout.num_ingredients
 
         static_objects = state.grid[:, :, 0]
-
-        static_layers = [
-            jnp.array(static_objects == StaticObject.WALL, dtype=jnp.uint8),
-            jnp.array(static_objects == StaticObject.GOAL, dtype=jnp.uint8),
-            jnp.array(static_objects == StaticObject.POT, dtype=jnp.uint8),
-            jnp.array(static_objects == StaticObject.RECIPE_INDICATOR, dtype=jnp.uint8),
-            jnp.array(static_objects == StaticObject.PLATE_PILE, dtype=jnp.uint8),
-        ]
-        for i in range(num_ingredients):
-            static_layers.append(
-                jnp.array(
-                    static_objects == StaticObject.INGREDIENT_PILE_BASE + i,
-                    dtype=jnp.uint8,
-                )
-            )
+        static_encoding = jnp.array(
+            [
+                StaticObject.WALL,
+                StaticObject.GOAL,
+                StaticObject.POT,
+                StaticObject.RECIPE_INDICATOR,
+                StaticObject.PLATE_PILE,
+            ]
+            + [StaticObject.INGREDIENT_PILE_BASE + i for i in range(num_ingredients)]
+        )
+        static_layers = static_objects[..., None] == static_encoding
+        print("static_layers: ", static_layers.shape)
 
         def _ingridient_layers(ingredients):
-            ingredients_layers = []
-            for _ in range(num_ingredients):
-                ingredients >>= 2
-                ingredients_layers.append(jnp.array(ingredients & 0x3, dtype=jnp.uint8))
-            return ingredients_layers
+            shift = jnp.array([0, 1] + [2 * (i + 1) for i in range(num_ingredients)])
+            mask = jnp.array([0x1, 0x1] + [0x3] * num_ingredients)
+
+            layers = ingredients[..., None] >> shift
+            layers = layers & mask
+
+            # layers = jax.nn.one_hot(
+            #     layers, MAX_INGREDIENTS + 1
+            # ).reshape(height, width, -1)
+            return layers
 
         ingredients = state.grid[:, :, 1]
 
@@ -541,90 +546,79 @@ class OvercookedV2(MultiAgentEnv):
         #     state.agents.inventory
         # )
 
-        ingredients_layers = [
-            jnp.array(ingredients & DynamicObject.PLATE != 0, dtype=jnp.uint8),
-            jnp.array(ingredients & DynamicObject.COOKED != 0, dtype=jnp.uint8),
-        ]
-
-        ingredients_layers += _ingridient_layers(ingredients)
-
-        inventory_layers = []
-        recipe_layers = []
-
-        tmp_inventory = (
-            jnp.zeros_like(ingredients)
-            .at[state.agents.pos.y, state.agents.pos.x]
-            .set(state.agents.inventory)
-        )
-        inventory_layers = _ingridient_layers(tmp_inventory)
+        ingredients_layers = _ingridient_layers(ingredients)
+        print("ingredients_layers: ", ingredients_layers.shape)
 
         recipe_indicator_mask = static_objects == StaticObject.RECIPE_INDICATOR
-        tmp_recipe = jnp.where(recipe_indicator_mask, state.recipe, 0)
-        recipe_layers = _ingridient_layers(tmp_recipe)
+        recipe_ingridients = jnp.where(recipe_indicator_mask, state.recipe, 0)
+        recipe_layers = _ingridient_layers(recipe_ingridients)
+        print("recipe_layers: ", recipe_layers.shape)
 
         extra_info = state.grid[:, :, 2]
-        extra_layers = [
-            jnp.array(
-                jnp.where(static_objects == StaticObject.POT, extra_info, 0),
-                dtype=jnp.uint8,
-            ),
-        ]
-
-        all_agent_layer = (
-            jnp.zeros((height, width, 5), dtype=jnp.uint8)
-            .at[state.agents.pos.y, state.agents.pos.x, 0]
-            .set(1)
-            .at[state.agents.pos.y, state.agents.pos.x, state.agents.dir + 1]
-            .set(1)
-        )
-        all_agent_layers = [all_agent_layer[:, :, i] for i in range(5)]
-        agent_self_layers = [
-            jnp.zeros((height, width), dtype=jnp.uint8) for _ in range(5)
-        ]
-
-        agent_layers = agent_self_layers + all_agent_layers
-
-        # all_agent_layer = jnp.zeros((height, width), dtype=jnp.uint8)
-        # print(state.agents.pos)
-        # print(state.agents.dir)
-        # all_agent_layer = all_agent_layer.at[
-        #     state.agents.pos.y, state.agents.pos.x
-        # ].set(state.agents.dir)
-        # agent_self_layer = jnp.zeros((height, width), dtype=jnp.uint8)
-
-        # agent_layers = [
-        #     agent_self_layer,
-        #     all_agent_layer,
-        # ]
-
-        all_layers = (
-            agent_layers
-            + static_layers
-            + ingredients_layers
-            + inventory_layers
-            + recipe_layers
-            + extra_layers
-        )
-
-        obs = jnp.stack(
-            all_layers,
+        pot_timer_layer = jnp.where(static_objects == StaticObject.POT, extra_info, 0)
+        extra_layers = jnp.stack(
+            [
+                pot_timer_layer,
+            ],
             axis=-1,
         )
 
-        def _agent_obs(agent):
+        def _agent_layers(agent):
             pos = agent.pos
-            # return obs.at[pos.y, pos.x, 0].set(1)
             direction = agent.dir
-            self_layers = (
-                jnp.zeros((height, width, 5), dtype=jnp.uint8)
+            inv = agent.inventory
+
+            pos_layers = (
+                jnp.zeros((height, width, 1), dtype=jnp.uint8)
                 .at[pos.y, pos.x, 0]
                 .set(1)
-                .at[pos.y, pos.x, direction + 1]
+            )
+            dir_layers = (
+                jnp.zeros((height, width, 4), dtype=jnp.uint8)
+                .at[pos.y, pos.x, direction]
                 .set(1)
             )
-            return obs.at[:, :, :5].set(self_layers).at[:, :, 5:10].add(-self_layers)
+            inv_grid = jnp.zeros_like(ingredients).at[pos.y, pos.x].set(inv)
+            inv_layers = _ingridient_layers(inv_grid)
 
-        return jax.vmap(_agent_obs)(state.agents)
+            return jnp.concatenate(
+                [
+                    pos_layers,
+                    dir_layers,
+                    inv_layers,
+                ],
+                axis=-1,
+            )
+
+        agent_layers = jax.vmap(_agent_layers)(state.agents)
+        all_agent_layers = jnp.sum(agent_layers, axis=0)
+
+        environment_layers = jnp.concatenate(
+            [
+                static_layers,
+                ingredients_layers,
+                recipe_layers,
+                extra_layers,
+            ],
+            axis=-1,
+        )
+        print("environment_layers: ", environment_layers.shape)
+
+        def _agent_obs(agent_layer):
+            other_agent_layers = all_agent_layers - agent_layer
+
+            print("agent_layer: ", agent_layer.shape)
+
+            return jnp.concatenate(
+                [
+                    agent_layer,
+                    other_agent_layers,
+                    environment_layers,
+                ],
+                axis=-1,
+            )
+
+        return jax.vmap(_agent_obs)(agent_layers)
 
     def step_agents(
         self,
@@ -727,6 +721,11 @@ class OvercookedV2(MultiAgentEnv):
                     grid, agent, new_agents.inventory, state.recipe
                 )
 
+                # jax.debug.print(
+                #     "correct_deflivery: {a}, new_correct_delivery: {b}",
+                #     a=correct_delivery,
+                #     b=new_correct_delivery,
+                # )
                 carry = (
                     new_grid,
                     correct_delivery | new_correct_delivery,
@@ -746,6 +745,8 @@ class OvercookedV2(MultiAgentEnv):
         # shaped_rewards = jnp.full_like(shaped_rewards, jnp.sum(shaped_rewards))
         # shaped_rewards = jnp.zeros_like(shaped_rewards)
 
+        # jax.debug.print("new_correct_delivery: {a}", a=new_correct_delivery)
+
         # Cook pots:
         def _cook_wrapper(cell):
             is_pot = cell[0] == StaticObject.POT
@@ -763,13 +764,39 @@ class OvercookedV2(MultiAgentEnv):
         new_grid = jax.vmap(jax.vmap(_cook_wrapper))(new_grid)
 
         key, subkey = jax.random.split(key)
+
+        sample_new_recipe = new_correct_delivery & self.sample_recipe_on_delivery
+        # jax.debug.print(
+        #     "sample_new_recipe: {sample_new_recipe}",
+        #     sample_new_recipe=sample_new_recipe,
+        # )
+
+        print(sample_new_recipe, sample_new_recipe.shape)
+
+        def _a(recipe, key):
+            return self._sample_recipe(key)
+
+        def _b(recipe, key):
+            return recipe
+
         new_recipe = jax.lax.cond(
-            new_correct_delivery & self.sample_recipe_on_delivery,
-            lambda _, key: self._sample_recipe(key),
-            lambda r, _: r,
+            sample_new_recipe,
+            # lambda _: self._sample_recipe(subkey),
+            # lambda _: state.recipe,
+            # None,
+            _a,
+            _b,
             state.recipe,
             subkey,
         )
+
+        # jax.debug.print(
+        #     "new_correct_delivery: {a}, old_recipe: {b}, new_recipe: {c}, haha: {d}",
+        #     a=new_correct_delivery,
+        #     b=state.recipe,
+        #     c=new_recipe,
+        #     d=new_correct_delivery & self.sample_recipe_on_delivery,
+        # )
 
         return (
             state.replace(
@@ -810,6 +837,9 @@ class OvercookedV2(MultiAgentEnv):
         object_is_pot = interact_item == StaticObject.POT
         object_is_goal = interact_item == StaticObject.GOAL
         object_is_wall = interact_item == StaticObject.WALL
+        onject_is_button_recipe_indicator = (
+            interact_item == StaticObject.BUTTON_RECIPE_INDICATOR
+        )
 
         object_has_no_ingredients = interact_ingredients == 0
 
@@ -842,6 +872,10 @@ class OvercookedV2(MultiAgentEnv):
             + object_is_wall * ~object_has_no_ingredients * inventory_is_empty
         )
 
+        successful_indicator_activation = (
+            onject_is_button_recipe_indicator * inventory_is_empty * object_has_no_ingredients
+        )
+
         # print("successful_pickup: ", successful_pickup)
         # print("object_is_pile: ", object_is_pile)
         # print("inventory_is_empty: ", inventory_is_empty)
@@ -857,11 +891,11 @@ class OvercookedV2(MultiAgentEnv):
         shaped_reward += (
             successful_pot_placement
             * is_pot_placement_useful
-            # * jax.lax.select(
-            #     is_pot_placement_useful,
-            #     1,
-            #     -1 if self.negative_rewards else 0,
-            # )
+            * jax.lax.select(
+                is_pot_placement_useful,
+                1,
+                -1 if self.negative_rewards else 0,
+            )
             * SHAPED_REWARDS["PLACEMENT_IN_POT"]
         )
 

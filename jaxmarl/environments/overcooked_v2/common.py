@@ -19,8 +19,9 @@ class StaticObject(IntEnum):
     GOAL = 4
     POT = 5
     RECIPE_INDICATOR = 6
-    PLATE_PILE = 7
+    BUTTON_RECIPE_INDICATOR = 7
 
+    PLATE_PILE = 9
     INGREDIENT_PILE_BASE = 10
 
     @staticmethod
