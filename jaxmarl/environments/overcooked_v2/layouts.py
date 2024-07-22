@@ -114,6 +114,31 @@ W   B   W
 WWWWWWWWW
 """
 
+fun_symmetries_plates = """
+WWWWWWW
+B  W  0
+R APA X
+B  W  1
+WWWWWWW
+"""
+
+
+fun_symmetries = """
+WWWWBWW
+2  W  0
+R APA X
+2  W  1
+WWWWBWW
+"""
+
+fun_symmetries1 = """
+WWWWWBWW
+2  WW  0
+R AWPA X
+2  WW  1
+WWWWWBWW
+"""
+
 
 @dataclass
 class Layout:
@@ -281,5 +306,14 @@ overcooked_v2_layouts = {
     ),
     "more_fun_coordination": layout_grid_to_dict(
         more_fun_coordination, possible_recipes=[[0, 1, 1], [0, 2, 2]]
+    ),
+    "fun_symmetries": layout_grid_to_dict(
+        fun_symmetries, possible_recipes=[[0, 0, 0], [1, 1, 1]]
+    ),
+    "fun_symmetries_plates": layout_grid_to_dict(
+        fun_symmetries_plates, possible_recipes=[[0, 0, 0], [1, 1, 1]]
+    ),
+    "fun_symmetries1": layout_grid_to_dict(
+        fun_symmetries1, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
 }
