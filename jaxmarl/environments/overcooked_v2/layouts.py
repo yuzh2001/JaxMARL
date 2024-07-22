@@ -139,6 +139,22 @@ R AWPA X
 WWWWWBWW
 """
 
+grounded_coord = """
+WW2WWWWW
+W  WB  0
+R ALPA X
+W  WB  1
+WW2WWWW
+"""
+
+demo_cook = """
+WWWWWWWWWWWWWW2WBWW
+0              W  0
+W           R APA X
+1              W  1
+WWWWWWWWWWWWWW2WBWW
+"""
+
 
 @dataclass
 class Layout:
@@ -192,6 +208,7 @@ def layout_grid_to_dict(grid, possible_recipes=None):
     B: plate (bowl) pile
     P: pot location
     R: recipe of the day indicator
+    L: button recipe indicator
     0-9: Ingredient x pile
     ' ' (space) : empty cell
 
@@ -223,6 +240,7 @@ def layout_grid_to_dict(grid, possible_recipes=None):
         "B": StaticObject.PLATE_PILE,
         "P": StaticObject.POT,
         "R": StaticObject.RECIPE_INDICATOR,
+        "L": StaticObject.BUTTON_RECIPE_INDICATOR,
     }
 
     for r in range(10):
@@ -315,5 +333,11 @@ overcooked_v2_layouts = {
     ),
     "fun_symmetries1": layout_grid_to_dict(
         fun_symmetries1, possible_recipes=[[0, 0, 0], [1, 1, 1]]
+    ),
+    "grounded_coord": layout_grid_to_dict(
+        grounded_coord, possible_recipes=[[0, 0, 0], [1, 1, 1]]
+    ),
+    "demo_cook": layout_grid_to_dict(
+        demo_cook, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
 }

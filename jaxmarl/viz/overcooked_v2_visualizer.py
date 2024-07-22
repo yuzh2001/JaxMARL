@@ -5,7 +5,10 @@ import jaxmarl.viz.grid_rendering_v2 as rendering
 import jax
 import jax.numpy as jnp
 from jaxmarl.environments.overcooked_v2.common import StaticObject, DynamicObject
-from jaxmarl.environments.overcooked_v2.settings import POT_COOK_TIME
+from jaxmarl.environments.overcooked_v2.settings import (
+    POT_COOK_TIME,
+    INDICATOR_ACTIVATION_TIME,
+)
 import imageio
 from functools import partial
 
@@ -111,11 +114,19 @@ class OvercookedV2Visualizer:
 
         grid, _ = jax.lax.scan(_include_agents, grid, agents)
 
-        recipe_indicator_mask = grid[:, :, 0] == StaticObject.RECIPE_INDICATOR
+        static_objects = grid[:, :, 0]
+        ingredients = grid[:, :, 1]
+        extra_info = grid[:, :, 2]
+
+        recipe_indicator_mask = static_objects == StaticObject.RECIPE_INDICATOR
+        button_recipe_indicator_mask = (
+            static_objects == StaticObject.BUTTON_RECIPE_INDICATOR
+        ) & (extra_info > 0)
+
         new_ingredients_layer = jnp.where(
-            recipe_indicator_mask,
+            recipe_indicator_mask | button_recipe_indicator_mask,
             recipe | DynamicObject.COOKED | DynamicObject.PLATE,
-            grid[:, :, 1],
+            ingredients,
         )
         grid = grid.at[:, :, 1].set(new_ingredients_layer)
 
@@ -258,6 +269,30 @@ class OvercookedV2Visualizer:
 
             return img
 
+        def _render_button_recipe_indicator(cell, img):
+            img = rendering.fill_coords(
+                img, rendering.point_in_rect(0, 1, 0, 1), COLORS["grey"]
+            )
+            img = rendering.fill_coords(
+                img, rendering.point_in_rect(0.1, 0.9, 0.1, 0.9), COLORS["brown"]
+            )
+            img = OvercookedV2Visualizer._render_dynamic_item(cell[1], img)
+
+            time_left = cell[2]
+            progress_fn = rendering.point_in_rect(
+                0.1,
+                0.9 - (0.9 - 0.1) / INDICATOR_ACTIVATION_TIME * time_left,
+                0.83,
+                0.88,
+            )
+            img_timer = rendering.fill_coords(img, progress_fn, COLORS["green"])
+
+            button_fn = rendering.point_in_circle(0.5, 0.5, 0.2)
+            img_button = rendering.fill_coords(img, button_fn, COLORS["red"])
+
+            img = jax.lax.select(time_left > 0, img_timer, img_button)
+            return img
+
         def _render_plate_pile(cell, img):
             img = rendering.fill_coords(
                 img, rendering.point_in_rect(0, 1, 0, 1), COLORS["grey"]
@@ -302,6 +337,7 @@ class OvercookedV2Visualizer:
             StaticObject.GOAL: _render_goal,
             StaticObject.POT: _render_pot,
             StaticObject.RECIPE_INDICATOR: _render_recipe_indicator,
+            StaticObject.BUTTON_RECIPE_INDICATOR: _render_button_recipe_indicator,
             StaticObject.PLATE_PILE: _render_plate_pile,
         }
 

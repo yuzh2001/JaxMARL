@@ -30,6 +30,7 @@ from jaxmarl.environments.overcooked_v2.encoding import (
 from jaxmarl.environments.overcooked_v2.layouts import overcooked_v2_layouts, Layout
 from jaxmarl.environments.overcooked_v2.settings import (
     DELIVERY_REWARD,
+    INDICATOR_ACTIVATION_COST,
     INDICATOR_ACTIVATION_TIME,
     POT_COOK_TIME,
     SHAPED_REWARDS,
@@ -447,7 +448,7 @@ class OvercookedV2(MultiAgentEnv):
 
         if obs_type == ObservationType.SPARSE:
             num_ingredients = self.layout.num_ingredients
-            num_layers = 17 + 4 * (num_ingredients + 2)
+            num_layers = 18 + 4 * (num_ingredients + 2)
             return (view_height, view_width, num_layers)
         elif obs_type == ObservationType.EMBEDDED:
             return (view_height, view_width, 2)
@@ -469,10 +470,13 @@ class OvercookedV2(MultiAgentEnv):
         Third channel contains agent positions and orientations
         """
 
+        # TODO: implement this
+
         agents = state.agents
         obs = state.grid
 
         recipe_indicator_mask = obs[:, :, 0] == StaticObject.RECIPE_INDICATOR
+
         new_ingredients_layer = jnp.where(
             recipe_indicator_mask, state.recipe, obs[:, :, 1]
         )
@@ -514,12 +518,16 @@ class OvercookedV2(MultiAgentEnv):
         num_ingredients = self.layout.num_ingredients
 
         static_objects = state.grid[:, :, 0]
+        ingredients = state.grid[:, :, 1]
+        extra_info = state.grid[:, :, 2]
+
         static_encoding = jnp.array(
             [
                 StaticObject.WALL,
                 StaticObject.GOAL,
                 StaticObject.POT,
                 StaticObject.RECIPE_INDICATOR,
+                StaticObject.BUTTON_RECIPE_INDICATOR,
                 StaticObject.PLATE_PILE,
             ]
             + [StaticObject.INGREDIENT_PILE_BASE + i for i in range(num_ingredients)]
@@ -539,8 +547,6 @@ class OvercookedV2(MultiAgentEnv):
             # ).reshape(height, width, -1)
             return layers
 
-        ingredients = state.grid[:, :, 1]
-
         # recipe_indicator_mask = static_objects == StaticObject.RECIPE_INDICATOR
         # ingredients = jnp.where(recipe_indicator_mask, state.recipe, ingredients)
         # ingredients = ingredients.at[state.agents.pos.y, state.agents.pos.x].set(
@@ -551,7 +557,13 @@ class OvercookedV2(MultiAgentEnv):
         print("ingredients_layers: ", ingredients_layers.shape)
 
         recipe_indicator_mask = static_objects == StaticObject.RECIPE_INDICATOR
-        recipe_ingridients = jnp.where(recipe_indicator_mask, state.recipe, 0)
+        button_recipe_indicator_mask = (
+            static_objects == StaticObject.BUTTON_RECIPE_INDICATOR
+        ) & (extra_info > 0)
+
+        recipe_ingridients = jnp.where(
+            recipe_indicator_mask | button_recipe_indicator_mask, state.recipe, 0
+        )
         recipe_layers = _ingridient_layers(recipe_ingridients)
         print("recipe_layers: ", recipe_layers.shape)
 
@@ -978,16 +990,22 @@ class OvercookedV2(MultiAgentEnv):
 
         is_correct_recipe = inventory == plated_recipe
         # print("is_correct_recipe: ", is_correct_recipe)
-        reward = (
-            jnp.array(successful_delivery, dtype=float)
+
+        reward = jnp.array(0, dtype=float)
+
+        # Reward for successful delivery of a dish (negative if the dish is incorrect)
+        reward += (
+            successful_delivery
             * jax.lax.select(
                 is_correct_recipe,
                 1,
                 -1 if self.negative_rewards else 0,
             )
-            # * is_correct_recipe
             * DELIVERY_REWARD
         )
+
+        # Cost for activating a button recipe indicator
+        reward -= successful_indicator_activation * INDICATOR_ACTIVATION_COST
 
         # Plate pickup reward: number of plates in player hands < number ready/cooking/partially full pot
         inventory_is_plate = new_inventory == DynamicObject.PLATE
