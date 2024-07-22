@@ -30,6 +30,7 @@ from jaxmarl.environments.overcooked_v2.encoding import (
 from jaxmarl.environments.overcooked_v2.layouts import overcooked_v2_layouts, Layout
 from jaxmarl.environments.overcooked_v2.settings import (
     DELIVERY_REWARD,
+    INDICATOR_ACTIVATION_TIME,
     POT_COOK_TIME,
     SHAPED_REWARDS,
 )
@@ -747,9 +748,10 @@ class OvercookedV2(MultiAgentEnv):
 
         # jax.debug.print("new_correct_delivery: {a}", a=new_correct_delivery)
 
-        # Cook pots:
-        def _cook_wrapper(cell):
-            is_pot = cell[0] == StaticObject.POT
+        # Update extra info:
+        def _timestep_wrapper(cell):
+            # is_pot = cell[0] == StaticObject.POT
+            # is_button_indicator = cell[0] == StaticObject.BUTTON_RECIPE_INDICATOR
 
             def _cook(cell):
                 is_cooking = cell[2] > 0
@@ -759,11 +761,39 @@ class OvercookedV2(MultiAgentEnv):
 
                 return jnp.array([cell[0], new_ingredients, new_extra])
 
-            return jax.lax.cond(is_pot, _cook, lambda x: x, cell)
+            def _indicator(cell):
+                new_extra = jnp.clip(cell[2] - 1, min=0)
+                return cell.at[2].set(new_extra)
 
-        new_grid = jax.vmap(jax.vmap(_cook_wrapper))(new_grid)
+            # return jax.lax.cond(is_pot, _cook, lambda x: x, cell)
 
-        key, subkey = jax.random.split(key)
+            branches = (
+                jnp.array(
+                    [
+                        StaticObject.POT,
+                        StaticObject.BUTTON_RECIPE_INDICATOR,
+                    ]
+                )
+                == cell[0]
+            )
+
+            branch_idx = jax.lax.select(
+                jnp.any(branches),
+                jnp.argmax(branches) + 1,
+                0,
+            )
+
+            return jax.lax.switch(
+                branch_idx,
+                [
+                    lambda x: x,
+                    _cook,
+                    _indicator,
+                ],
+                cell,
+            )
+
+        new_grid = jax.vmap(jax.vmap(_timestep_wrapper))(new_grid)
 
         sample_new_recipe = new_correct_delivery & self.sample_recipe_on_delivery
         # jax.debug.print(
@@ -771,21 +801,11 @@ class OvercookedV2(MultiAgentEnv):
         #     sample_new_recipe=sample_new_recipe,
         # )
 
-        print(sample_new_recipe, sample_new_recipe.shape)
-
-        def _a(recipe, key):
-            return self._sample_recipe(key)
-
-        def _b(recipe, key):
-            return recipe
-
+        key, subkey = jax.random.split(key)
         new_recipe = jax.lax.cond(
             sample_new_recipe,
-            # lambda _: self._sample_recipe(subkey),
-            # lambda _: state.recipe,
-            # None,
-            _a,
-            _b,
+            lambda _, key: self._sample_recipe(key),
+            lambda r, _: r,
             state.recipe,
             subkey,
         )
@@ -873,7 +893,9 @@ class OvercookedV2(MultiAgentEnv):
         )
 
         successful_indicator_activation = (
-            onject_is_button_recipe_indicator * inventory_is_empty * object_has_no_ingredients
+            onject_is_button_recipe_indicator
+            * inventory_is_empty
+            * object_has_no_ingredients
         )
 
         # print("successful_pickup: ", successful_pickup)
@@ -935,11 +957,14 @@ class OvercookedV2(MultiAgentEnv):
             * SHAPED_REWARDS["POT_START_COOKING"]
         )
         auto_cook = pot_is_idle & pot_full_after_drop & ~self.start_cooking_interaction
-        new_extra = jax.lax.select(
-            successful_pot_start_cooking | auto_cook,
-            POT_COOK_TIME,
-            interact_extra,
+
+        use_pot_extra = successful_pot_start_cooking | auto_cook
+        new_extra = (
+            use_pot_extra * POT_COOK_TIME
+            + successful_indicator_activation * INDICATOR_ACTIVATION_TIME
+            + ~use_pot_extra * ~successful_indicator_activation * interact_extra
         )
+
         new_cell = jnp.array([interact_item, new_ingredients, new_extra])
 
         new_grid = grid.at[fwd_pos.y, fwd_pos.x].set(new_cell)
