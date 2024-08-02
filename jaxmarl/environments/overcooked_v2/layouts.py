@@ -66,7 +66,7 @@ B W W
 WWWXW
 """
 
-counter_circuit_grid = """
+counter_circuit = """
 WWWPPWWW
 W A    W
 B WWWW X
@@ -139,7 +139,7 @@ R AWPA X
 WWWWWBWW
 """
 
-grounded_coord = """
+grounded_coord_simple = """
 WW2WWWWW
 W  WB  0
 R ALPA X
@@ -147,12 +147,32 @@ W  WB  1
 WW2WWWW
 """
 
-demo_cook = """
-WWWWWWWWWWWWWW2WBWW
-0              W  0
-W           R APA X
-1              W  1
-WWWWWWWWWWWWWW2WBWW
+grounded_coord_ring = """
+WWW2R2WWW
+W       W
+W WWWWW W
+2 0   0 2
+RAXAP X R
+2 1   1 2
+W WWWWW W
+W       W
+Www2R2www
+"""
+
+demo_cook_simple = """
+WWWWW2WBWW
+0     W  0
+W  R APA X
+1     W  1
+WWWWW2WBWW
+"""
+
+demo_cook_wide = """
+WWWW0X1WWWW
+W    A    W
+WWWWBPBWWWW
+0    A    1
+WWWWWRWWWWW
 """
 
 
@@ -314,7 +334,7 @@ overcooked_v2_layouts = {
     "coord_ring": layout_grid_to_dict(coord_ring, possible_recipes=[[0, 0, 0]]),
     "forced_coord": layout_grid_to_dict(forced_coord, possible_recipes=[[0, 0, 0]]),
     "counter_circuit": layout_grid_to_dict(
-        counter_circuit_grid, possible_recipes=[[0, 0, 0]]
+        counter_circuit, possible_recipes=[[0, 0, 0]]
     ),
     "two_rooms": layout_grid_to_dict(two_rooms),
     "two_rooms_simple": layout_grid_to_dict(two_rooms_simple),
@@ -334,10 +354,19 @@ overcooked_v2_layouts = {
     "fun_symmetries1": layout_grid_to_dict(
         fun_symmetries1, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
-    "grounded_coord": layout_grid_to_dict(
-        grounded_coord, possible_recipes=[[0, 0, 0], [1, 1, 1]]
+
+    "grounded_coord_simple": layout_grid_to_dict(
+        grounded_coord_simple, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
-    "demo_cook": layout_grid_to_dict(
-        demo_cook, possible_recipes=[[0, 0, 0], [1, 1, 1]]
+    "grounded_coord_ring": layout_grid_to_dict(
+        grounded_coord_ring, possible_recipes=[[0, 0, 0], [1, 1, 1]]
+    ),
+
+
+    "demo_cook_simple": layout_grid_to_dict(
+        demo_cook_simple, possible_recipes=[[0, 0, 0], [1, 1, 1]]
+    ),
+    "demo_cook_wide": layout_grid_to_dict(
+        demo_cook_wide, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
 }
