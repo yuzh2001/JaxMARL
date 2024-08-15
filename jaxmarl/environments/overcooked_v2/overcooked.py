@@ -62,6 +62,8 @@ class State:
 
     recipe: int
 
+    new_correct_delivery: bool = False
+
 
 class OvercookedV2(MultiAgentEnv):
     """Vanilla Overcooked"""
@@ -77,6 +79,7 @@ class OvercookedV2(MultiAgentEnv):
         start_cooking_interaction: bool = False,
         negative_rewards: bool = False,
         sample_recipe_on_delivery: bool = False,
+        indicate_successful_delivery: bool = False,
     ):
         """
         Initializes the OvercookedV2 environment.
@@ -91,6 +94,7 @@ class OvercookedV2(MultiAgentEnv):
             start_cooking_interaction (bool): If false the pot starts cooking automatically once three ingredients are added, if true the pot starts cooking only after the agent interacts with it.
             negative_rewards (bool): Whether to use negative rewards.
             sample_recipe_on_delivery (bool): Whether to sample a new recipe when a delivery is made. Default is on reset only.
+            indicate_successful_delivery (bool): Whether to indicate a delivery was successful in the observation.
         """
 
         if isinstance(layout, str):
@@ -116,6 +120,7 @@ class OvercookedV2(MultiAgentEnv):
 
         self.observation_type = observation_type
         self.agent_view_size = agent_view_size
+        self.indicate_successful_delivery = indicate_successful_delivery
         self.obs_shape = self._get_obs_shape(observation_type)
 
         self.max_steps = max_steps
@@ -125,10 +130,8 @@ class OvercookedV2(MultiAgentEnv):
         self.random_reset = random_reset
         self.random_agent_positions = random_agent_positions
 
-        self.start_cooking_interaction = jnp.array(
-            start_cooking_interaction, dtype=jnp.bool_
-        )
-        self.negative_rewards = jnp.array(negative_rewards, dtype=jnp.bool_)
+        self.start_cooking_interaction = start_cooking_interaction
+        self.negative_rewards = negative_rewards
         self.sample_recipe_on_delivery = jnp.array(
             sample_recipe_on_delivery, dtype=jnp.bool_
         )
@@ -209,6 +212,7 @@ class OvercookedV2(MultiAgentEnv):
             time=0,
             terminal=False,
             recipe=recipe,
+            new_correct_delivery=False,
         )
 
         key, key_randomize = jax.random.split(key)
@@ -440,8 +444,8 @@ class OvercookedV2(MultiAgentEnv):
     ) -> Tuple[int]:
         if self.agent_view_size:
             view_size = self.agent_view_size * 2 + 1
-            view_width = jnp.minimum(self.width, view_size)
-            view_height = jnp.minimum(self.height, view_size)
+            view_width = min(self.width, view_size)
+            view_height = min(self.height, view_size)
         else:
             view_width = self.width
             view_height = self.height
@@ -449,6 +453,10 @@ class OvercookedV2(MultiAgentEnv):
         if obs_type == ObservationType.SPARSE:
             num_ingredients = self.layout.num_ingredients
             num_layers = 18 + 4 * (num_ingredients + 2)
+
+            if self.indicate_successful_delivery:
+                num_layers += 1
+
             return (view_height, view_width, num_layers)
         elif obs_type == ObservationType.EMBEDDED:
             return (view_height, view_width, 2)
@@ -547,12 +555,6 @@ class OvercookedV2(MultiAgentEnv):
             # ).reshape(height, width, -1)
             return layers
 
-        # recipe_indicator_mask = static_objects == StaticObject.RECIPE_INDICATOR
-        # ingredients = jnp.where(recipe_indicator_mask, state.recipe, ingredients)
-        # ingredients = ingredients.at[state.agents.pos.y, state.agents.pos.x].set(
-        #     state.agents.inventory
-        # )
-
         ingredients_layers = _ingridient_layers(ingredients)
         print("ingredients_layers: ", ingredients_layers.shape)
 
@@ -569,12 +571,18 @@ class OvercookedV2(MultiAgentEnv):
 
         extra_info = state.grid[:, :, 2]
         pot_timer_layer = jnp.where(static_objects == StaticObject.POT, extra_info, 0)
-        extra_layers = jnp.stack(
-            [
-                pot_timer_layer,
-            ],
-            axis=-1,
+        new_correct_delivery_layer = jnp.where(
+            static_objects == StaticObject.GOAL, state.new_correct_delivery, 0
         )
+
+        extra_layers = [
+            pot_timer_layer,
+        ]
+
+        if self.indicate_successful_delivery:
+            extra_layers.append(new_correct_delivery_layer)
+
+        extra_layers = jnp.stack(extra_layers, axis=-1)
 
         def _agent_layers(agent):
             pos = agent.pos
@@ -835,6 +843,7 @@ class OvercookedV2(MultiAgentEnv):
                 agents=new_agents,
                 grid=new_grid,
                 recipe=new_recipe,
+                new_correct_delivery=new_correct_delivery,
             ),
             reward,
             shaped_rewards,
