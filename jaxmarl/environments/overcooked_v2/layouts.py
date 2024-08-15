@@ -144,20 +144,29 @@ WW2WWWWW
 W  WB  0
 R ALPA X
 W  WB  1
-WW2WWWW
+WW2WWWWW
 """
 
 grounded_coord_ring = """
 WWW2R2WWW
 W       W
-W WWWWW W
-2 0   0 2
+W WWLWW W
+2 0   B 2
 RAXAP X R
-2 1   1 2
-W WWWWW W
+2 1   B 2
+W WWLWW W
 W       W
-Www2R2www
+WWW2R2WWW
 """
+
+test_time_simple = """
+WW2WWWWW
+W  WB  0
+R AWPA X
+W  WB  1
+WW2WWWWW
+"""
+
 
 demo_cook_simple = """
 WWWWW2WBWW
@@ -354,19 +363,19 @@ overcooked_v2_layouts = {
     "fun_symmetries1": layout_grid_to_dict(
         fun_symmetries1, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
-
     "grounded_coord_simple": layout_grid_to_dict(
         grounded_coord_simple, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
     "grounded_coord_ring": layout_grid_to_dict(
         grounded_coord_ring, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
-
-
     "demo_cook_simple": layout_grid_to_dict(
         demo_cook_simple, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
     "demo_cook_wide": layout_grid_to_dict(
         demo_cook_wide, possible_recipes=[[0, 0, 0], [1, 1, 1]]
+    ),
+    "test_time_simple": layout_grid_to_dict(
+        test_time_simple, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
 }
