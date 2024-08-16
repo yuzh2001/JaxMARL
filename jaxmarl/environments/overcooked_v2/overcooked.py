@@ -571,7 +571,9 @@ class OvercookedV2(MultiAgentEnv):
                 # jax.debug.print("ingredient_mapping: {i}", i=ingredient_mapping)
                 # jax.debug.print("layers: {i}", i=layers)
                 # mapping = jnp.array([0, 1] + ingredient_mapping)
-                layers.at[2:].set(layers[2:][ingredient_mapping])
+                layers = layers.at[..., 2:].set(
+                    layers[..., 2:][..., ingredient_mapping]
+                )
                 # jax.debug.print("layers perm: {i}", i=layers)
             # layers = jax.nn.one_hot(
             #     layers, MAX_INGREDIENTS + 1
