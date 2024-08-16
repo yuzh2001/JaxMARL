@@ -556,7 +556,6 @@ class OvercookedV2(MultiAgentEnv):
                 StaticObject.BUTTON_RECIPE_INDICATOR,
                 StaticObject.PLATE_PILE,
             ]
-            + [StaticObject.INGREDIENT_PILE_BASE + i for i in range(num_ingredients)]
         )
         static_layers = static_objects[..., None] == static_encoding
         print("static_layers: ", static_layers.shape)
@@ -675,11 +674,22 @@ class OvercookedV2(MultiAgentEnv):
             )
             print("recipe_layers: ", recipe_layers.shape)
 
+            ingredient_pile_encoding = jnp.array(
+                [StaticObject.INGREDIENT_PILE_BASE + i for i in range(num_ingredients)]
+            )
+            if self.op_ingredient_permutations:
+                ingredient_pile_encoding = ingredient_pile_encoding[ingredient_mapping]
+
+            ingredient_pile_layers = (
+                static_objects[..., None] == ingredient_pile_encoding
+            )
+
             return jnp.concatenate(
                 [
                     agent_layer,
                     other_agent_layers,
                     static_layers,
+                    ingredient_pile_layers,
                     ingredients_layers,
                     recipe_layers,
                     extra_layers,
