@@ -83,7 +83,7 @@ class OvercookedV2(MultiAgentEnv):
         negative_rewards: bool = False,
         sample_recipe_on_delivery: bool = False,
         indicate_successful_delivery: bool = False,
-        op_ingredient_permutations: bool = False,
+        op_ingredient_permutations: List[int] = None,
     ):
         """
         Initializes the OvercookedV2 environment.
@@ -99,7 +99,7 @@ class OvercookedV2(MultiAgentEnv):
             negative_rewards (bool): Whether to use negative rewards.
             sample_recipe_on_delivery (bool): Whether to sample a new recipe when a delivery is made. Default is on reset only.
             indicate_successful_delivery (bool): Whether to indicate a delivery was successful in the observation.
-            op_ingredient_permutations (bool): Whether to permute the order of ingredients in the observation (Fixed per agent in one episode).
+            op_ingredient_permutations (list): List of ingredient indices to permute in the observation (Fixed per agent in one episode).
         """
 
         if isinstance(layout, str):
@@ -214,10 +214,22 @@ class OvercookedV2(MultiAgentEnv):
         recipe = self._sample_recipe(subkey)
 
         ingredient_permutations = None
-        if self.op_ingredient_permutations:
+        # if self.op_ingredient_permutations is not None:
+
+        #     def _ingredient_permutation(key):
+        #         return jax.random.permutation(key, layout.num_ingredients)
+
+        #     key, subkey = jax.random.split(key)
+        #     ing_keys = jax.random.split(subkey, num_agents)
+        #     ingredient_permutations = jax.vmap(_ingredient_permutation)(ing_keys)
+        if self.op_ingredient_permutations is not None:
+            perm_indices = jnp.array(self.op_ingredient_permutations)
 
             def _ingredient_permutation(key):
-                return jax.random.permutation(key, layout.num_ingredients)
+                full_perm = jnp.arange(layout.num_ingredients)
+                perm = jax.random.permutation(key, perm_indices)
+                full_perm = full_perm.at[perm_indices].set(full_perm[perm])
+                return full_perm
 
             key, subkey = jax.random.split(key)
             ing_keys = jax.random.split(subkey, num_agents)
