@@ -18,7 +18,7 @@ COLORS = {
     "red": jnp.array([255, 0, 0], dtype=jnp.uint8),
     "green": jnp.array([0, 255, 0], dtype=jnp.uint8),
     "blue": jnp.array([0, 0, 255], dtype=jnp.uint8),
-    "purple": jnp.array([112, 39, 195], dtype=jnp.uint8),
+    "purple": jnp.array([160, 32, 240], dtype=jnp.uint8),
     "yellow": jnp.array([255, 255, 0], dtype=jnp.uint8),
     "grey": jnp.array([100, 100, 100], dtype=jnp.uint8),
     "white": jnp.array([255, 255, 255], dtype=jnp.uint8),
@@ -35,6 +35,7 @@ INGREDIENT_COLORS = jnp.array(
     [
         COLORS["yellow"],
         COLORS["dark_green"],
+        COLORS["purple"],
         COLORS["cyan"],
         COLORS["red"],
         COLORS["orange"],
