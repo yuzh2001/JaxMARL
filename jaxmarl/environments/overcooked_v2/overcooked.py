@@ -84,6 +84,7 @@ class OvercookedV2(MultiAgentEnv):
         sample_recipe_on_delivery: bool = False,
         indicate_successful_delivery: bool = False,
         op_ingredient_permutations: List[int] = None,
+        initial_state_buffer: Optional[State] = None,
     ):
         """
         Initializes the OvercookedV2 environment.
@@ -100,6 +101,7 @@ class OvercookedV2(MultiAgentEnv):
             sample_recipe_on_delivery (bool): Whether to sample a new recipe when a delivery is made. Default is on reset only.
             indicate_successful_delivery (bool): Whether to indicate a delivery was successful in the observation.
             op_ingredient_permutations (list): List of ingredient indices to permute in the observation (Fixed per agent in one episode).
+            initial_state_buffer (State): Initial state buffer to be used to reset the environment. On each reset, a state from this buffer will be used.
         """
 
         if isinstance(layout, str):
@@ -119,6 +121,8 @@ class OvercookedV2(MultiAgentEnv):
         self.width = layout.width
 
         self.layout = layout
+
+        self.initial_state_buffer = initial_state_buffer
 
         self.agents = [f"agent_{i}" for i in range(num_agents)]
         self.action_set = jnp.array(list(Actions))
@@ -185,10 +189,38 @@ class OvercookedV2(MultiAgentEnv):
             {"shaped_reward": shaped_rewards},
         )
 
+    @partial(jax.jit, static_argnums=(0,))
+    def _sample_op_ingredient_permutations(self, key: chex.PRNGKey) -> chex.Array:
+        perm_indices = jnp.array(self.op_ingredient_permutations)
+
+        def _ingredient_permutation(key):
+            full_perm = jnp.arange(self.layout.num_ingredients)
+            perm = jax.random.permutation(key, perm_indices)
+            full_perm = full_perm.at[perm_indices].set(full_perm[perm])
+            return full_perm
+
+        key, subkey = jax.random.split(key)
+        ing_keys = jax.random.split(subkey, self.num_agents)
+        ingredient_permutations = jax.vmap(_ingredient_permutation)(ing_keys)
+
+        return ingredient_permutations
+
     def reset(
         self,
         key: chex.PRNGKey,
     ) -> Tuple[Dict[str, chex.Array], State]:
+        if self.initial_state_buffer is not None:
+            num_states = jax.tree_util.tree_flatten(self.initial_state_buffer)[0][
+                0
+            ].shape[0]
+            # jax.debug.print("num_states: {i}", i=num_states)
+            print("num_states in buffer: ", num_states)
+            sampled_state_idx = jax.random.randint(key, (), 0, num_states)
+            sampled_state = jax.tree_util.tree_map(
+                lambda x: x[sampled_state_idx], self.initial_state_buffer
+            )
+            return self.reset_from_state(sampled_state, key)
+
         layout = self.layout
 
         static_objects = layout.static_objects
@@ -222,18 +254,8 @@ class OvercookedV2(MultiAgentEnv):
         #     key, subkey = jax.random.split(key)
         #     ing_keys = jax.random.split(subkey, num_agents)
         #     ingredient_permutations = jax.vmap(_ingredient_permutation)(ing_keys)
-        if self.op_ingredient_permutations is not None:
-            perm_indices = jnp.array(self.op_ingredient_permutations)
-
-            def _ingredient_permutation(key):
-                full_perm = jnp.arange(layout.num_ingredients)
-                perm = jax.random.permutation(key, perm_indices)
-                full_perm = full_perm.at[perm_indices].set(full_perm[perm])
-                return full_perm
-
-            key, subkey = jax.random.split(key)
-            ing_keys = jax.random.split(subkey, num_agents)
-            ingredient_permutations = jax.vmap(_ingredient_permutation)(ing_keys)
+        if self.op_ingredient_permutations:
+            ingredient_permutations = self._sample_op_ingredient_permutations(key)
 
         state = State(
             agents=agents,
@@ -250,6 +272,33 @@ class OvercookedV2(MultiAgentEnv):
             state = self._randomize_state(state, key_randomize)
         elif self.random_agent_positions:
             state = self._randomize_agent_positions(state, key_randomize)
+
+        obs = self.get_obs(state)
+
+        return lax.stop_gradient(obs), lax.stop_gradient(state)
+
+    @partial(jax.jit, static_argnums=(0,))
+    def reset_from_state(
+        self,
+        state: State,
+        key: chex.PRNGKey,
+    ) -> Tuple[Dict[str, chex.Array], State]:
+        """
+        Reset the environment from a given state. Grid and agents are copied from the state, other parameters are reset.
+        """
+
+        print("reset_from_state")
+
+        ingredient_permutations = None
+        if self.op_ingredient_permutations:
+            ingredient_permutations = self._sample_op_ingredient_permutations(key)
+
+        state = state.replace(
+            time=0,
+            terminal=False,
+            new_correct_delivery=False,
+            ingredient_permutations=ingredient_permutations,
+        )
 
         obs = self.get_obs(state)
 
