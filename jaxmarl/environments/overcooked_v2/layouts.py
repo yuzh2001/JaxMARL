@@ -74,7 +74,7 @@ W     AW
 WWWOOWWW
 """
 
-two_rooms = """
+two_rooms_both = """
 W01BWB10W
 W   W   R
 P A W A W
@@ -82,7 +82,7 @@ W   W   X
 WWWWWWWWW
 """
 
-two_rooms_simple = """
+two_rooms = """
 WWWWWB10W
 W   W   R
 P A W A W
@@ -169,11 +169,11 @@ WW2WWWWW
 
 
 demo_cook_simple = """
-WWWWW2WBWW
-0     W  0
-W  R APA X
-1     W  1
-WWWWW2WBWW
+WWWWWW2W0WW
+0      W  B
+W   R APA X
+1      W  B
+WWWWWW2W1WW
 """
 
 demo_cook_wide = """
@@ -182,6 +182,13 @@ W    A    W
 WWWWBPBWWWW
 0    A    1
 WWWWWRWWWWW
+"""
+
+overcookedv2_demo = """
+WWPWW
+0A A1
+L   R
+WBWXW
 """
 
 
@@ -228,154 +235,154 @@ class Layout:
 
         return [list(recipe) for recipe in unique_recipes]
 
+    @staticmethod
+    def from_string(grid, possible_recipes=None):
+        """Assumes `grid` is string representation of the layout, with 1 line per row, and the following symbols:
+        W: wall
+        A: agent
+        X: goal
+        B: plate (bowl) pile
+        P: pot location
+        R: recipe of the day indicator
+        L: button recipe indicator
+        0-9: Ingredient x pile
+        ' ' (space) : empty cell
 
-def layout_grid_to_dict(grid, possible_recipes=None):
-    """Assumes `grid` is string representation of the layout, with 1 line per row, and the following symbols:
-    W: wall
-    A: agent
-    X: goal
-    B: plate (bowl) pile
-    P: pot location
-    R: recipe of the day indicator
-    L: button recipe indicator
-    0-9: Ingredient x pile
-    ' ' (space) : empty cell
-
-    Depricated:
-    O: onion pile - will be interpreted as ingredient 0
+        Depricated:
+        O: onion pile - will be interpreted as ingredient 0
 
 
-    If `recipe` is provided, it should be a list of ingredient indices, max 3 ingredients per recipe
-    If `recipe` is not provided, the recipe will be randomized on reset.
-    If the layout does not have a recipe indicator, a fixed `recipe` must be provided.
+        If `recipe` is provided, it should be a list of ingredient indices, max 3 ingredients per recipe
+        If `recipe` is not provided, the recipe will be randomized on reset.
+        If the layout does not have a recipe indicator, a fixed `recipe` must be provided.
 
-    If `possible_recipes` is provided, it should be a list of lists of ingredient indices, 3 ingredients per recipe.
-    """
+        If `possible_recipes` is provided, it should be a list of lists of ingredient indices, 3 ingredients per recipe.
+        """
 
-    rows = grid.split("\n")
+        rows = grid.split("\n")
 
-    if len(rows[0]) == 0:
-        rows = rows[1:]
-    if len(rows[-1]) == 0:
-        rows = rows[:-1]
+        if len(rows[0]) == 0:
+            rows = rows[1:]
+        if len(rows[-1]) == 0:
+            rows = rows[:-1]
 
-    row_lens = [len(row) for row in rows]
-    static_objects = np.zeros((len(rows), max(row_lens)), dtype=int)
+        row_lens = [len(row) for row in rows]
+        static_objects = np.zeros((len(rows), max(row_lens)), dtype=int)
 
-    char_to_static_item = {
-        " ": StaticObject.EMPTY,
-        "W": StaticObject.WALL,
-        "X": StaticObject.GOAL,
-        "B": StaticObject.PLATE_PILE,
-        "P": StaticObject.POT,
-        "R": StaticObject.RECIPE_INDICATOR,
-        "L": StaticObject.BUTTON_RECIPE_INDICATOR,
-    }
+        char_to_static_item = {
+            " ": StaticObject.EMPTY,
+            "W": StaticObject.WALL,
+            "X": StaticObject.GOAL,
+            "B": StaticObject.PLATE_PILE,
+            "P": StaticObject.POT,
+            "R": StaticObject.RECIPE_INDICATOR,
+            "L": StaticObject.BUTTON_RECIPE_INDICATOR,
+        }
 
-    for r in range(10):
-        char_to_static_item[f"{r}"] = StaticObject.INGREDIENT_PILE_BASE + r
+        for r in range(10):
+            char_to_static_item[f"{r}"] = StaticObject.INGREDIENT_PILE_BASE + r
 
-    agent_positions = []
+        agent_positions = []
 
-    num_ingredients = 0
-    includes_recipe_indicator = False
-    for r, row in enumerate(rows):
-        c = 0
-        while c < len(row):
-            char = row[c]
+        num_ingredients = 0
+        includes_recipe_indicator = False
+        for r, row in enumerate(rows):
+            c = 0
+            while c < len(row):
+                char = row[c]
 
-            if char == "O":
-                char = "0"
+                if char == "O":
+                    char = "0"
 
-            if char == "A":
-                agent_pos = (c, r)
-                agent_positions.append(agent_pos)
+                if char == "A":
+                    agent_pos = (c, r)
+                    agent_positions.append(agent_pos)
 
-            obj = char_to_static_item.get(char, StaticObject.EMPTY)
-            static_objects[r, c] = obj
+                obj = char_to_static_item.get(char, StaticObject.EMPTY)
+                static_objects[r, c] = obj
 
-            if StaticObject.is_ingredient_pile(obj):
-                ingredient_idx = obj - StaticObject.INGREDIENT_PILE_BASE
-                num_ingredients = max(num_ingredients, ingredient_idx + 1)
+                if StaticObject.is_ingredient_pile(obj):
+                    ingredient_idx = obj - StaticObject.INGREDIENT_PILE_BASE
+                    num_ingredients = max(num_ingredients, ingredient_idx + 1)
 
-            if obj == StaticObject.RECIPE_INDICATOR:
-                includes_recipe_indicator = True
+                if obj == StaticObject.RECIPE_INDICATOR:
+                    includes_recipe_indicator = True
 
-            c += 1
+                c += 1
 
-    # TODO: add some sanity checks - e.g. agent must exist, surrounded by walls, etc.
+        # TODO: add some sanity checks - e.g. agent must exist, surrounded by walls, etc.
 
-    if possible_recipes is not None:
-        if not isinstance(possible_recipes, list):
-            raise ValueError("possible_recipes must be a list")
-        if not all(isinstance(recipe, list) for recipe in possible_recipes):
-            raise ValueError("possible_recipes must be a list of lists")
-        if not all(len(recipe) == 3 for recipe in possible_recipes):
-            raise ValueError("All recipes must be of length 3")
-    elif not includes_recipe_indicator:
-        raise ValueError(
-            "Layout does not include a recipe indicator, a fixed recipe must be provided"
+        if possible_recipes is not None:
+            if not isinstance(possible_recipes, list):
+                raise ValueError("possible_recipes must be a list")
+            if not all(isinstance(recipe, list) for recipe in possible_recipes):
+                raise ValueError("possible_recipes must be a list of lists")
+            if not all(len(recipe) == 3 for recipe in possible_recipes):
+                raise ValueError("All recipes must be of length 3")
+        elif not includes_recipe_indicator:
+            raise ValueError(
+                "Layout does not include a recipe indicator, a fixed recipe must be provided"
+            )
+
+        layout = Layout(
+            agent_positions=agent_positions,
+            static_objects=static_objects,
+            num_ingredients=num_ingredients,
+            possible_recipes=possible_recipes,
         )
 
-    layout = Layout(
-        agent_positions=agent_positions,
-        static_objects=static_objects,
-        num_ingredients=num_ingredients,
-        possible_recipes=possible_recipes,
-    )
-
-    return layout
+        return layout
 
 
 overcooked_v2_layouts = {
-    "cramped_room": layout_grid_to_dict(cramped_room, possible_recipes=[[0, 0, 0]]),
-    "cramped_room_v2": layout_grid_to_dict(cramped_room_v2),
-    "asymm_advantages": layout_grid_to_dict(
+    "cramped_room": Layout.from_string(cramped_room, possible_recipes=[[0, 0, 0]]),
+    "cramped_room_v2": Layout.from_string(cramped_room_v2),
+    "asymm_advantages": Layout.from_string(
         asymm_advantages, possible_recipes=[[0, 0, 0]]
     ),
-    "asymm_advantages_recipes_center": layout_grid_to_dict(
+    "asymm_advantages_recipes_center": Layout.from_string(
         asymm_advantages_recipes_center
     ),
-    "asymm_advantages_recipes_right": layout_grid_to_dict(
+    "asymm_advantages_recipes_right": Layout.from_string(
         asymm_advantages_recipes_right
     ),
-    "asymm_advantages_recipes_left": layout_grid_to_dict(asymm_advantages_recipes_left),
-    "coord_ring": layout_grid_to_dict(coord_ring, possible_recipes=[[0, 0, 0]]),
-    "forced_coord": layout_grid_to_dict(forced_coord, possible_recipes=[[0, 0, 0]]),
-    "counter_circuit": layout_grid_to_dict(
+    "asymm_advantages_recipes_left": Layout.from_string(asymm_advantages_recipes_left),
+    "coord_ring": Layout.from_string(coord_ring, possible_recipes=[[0, 0, 0]]),
+    "forced_coord": Layout.from_string(forced_coord, possible_recipes=[[0, 0, 0]]),
+    "counter_circuit": Layout.from_string(
         counter_circuit, possible_recipes=[[0, 0, 0]]
     ),
-    "two_rooms": layout_grid_to_dict(two_rooms),
-    "two_rooms_simple": layout_grid_to_dict(two_rooms_simple),
-    "long_room": layout_grid_to_dict(long_room, possible_recipes=[[0, 0, 0]]),
-    "fun_coordination": layout_grid_to_dict(
+    "two_rooms": Layout.from_string(two_rooms),
+    "two_rooms_both": Layout.from_string(two_rooms_both),
+    "long_room": Layout.from_string(long_room, possible_recipes=[[0, 0, 0]]),
+    "fun_coordination": Layout.from_string(
         fun_coordination, possible_recipes=[[0, 0, 2], [1, 1, 3]]
     ),
-    "more_fun_coordination": layout_grid_to_dict(
+    "more_fun_coordination": Layout.from_string(
         more_fun_coordination, possible_recipes=[[0, 1, 1], [0, 2, 2]]
     ),
-    "fun_symmetries": layout_grid_to_dict(
+    "fun_symmetries": Layout.from_string(
         fun_symmetries, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
-    "fun_symmetries_plates": layout_grid_to_dict(
+    "fun_symmetries_plates": Layout.from_string(
         fun_symmetries_plates, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
-    "fun_symmetries1": layout_grid_to_dict(
+    "fun_symmetries1": Layout.from_string(
         fun_symmetries1, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
-    "grounded_coord_simple": layout_grid_to_dict(
+    "grounded_coord_simple": Layout.from_string(
         grounded_coord_simple, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
-    "grounded_coord_ring": layout_grid_to_dict(
+    "grounded_coord_ring": Layout.from_string(
         grounded_coord_ring, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
-    "demo_cook_simple": layout_grid_to_dict(
+    "demo_cook_simple": Layout.from_string(
         demo_cook_simple, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
-    "demo_cook_wide": layout_grid_to_dict(
+    "demo_cook_wide": Layout.from_string(
         demo_cook_wide, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
-    "test_time_simple": layout_grid_to_dict(
+    "test_time_simple": Layout.from_string(
         test_time_simple, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
 }
