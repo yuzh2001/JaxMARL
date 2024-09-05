@@ -22,12 +22,6 @@ from jaxmarl.environments.overcooked_v2.common import (
     Position,
     Agent,
 )
-from jaxmarl.environments.overcooked_v2.encoding import (
-    encode_ingreidients,
-    encode_object,
-    encoded_ingreidients_num,
-    encoded_object_num,
-)
 from jaxmarl.environments.overcooked_v2.layouts import overcooked_v2_layouts, Layout
 from jaxmarl.environments.overcooked_v2.settings import (
     DELIVERY_REWARD,
@@ -45,7 +39,6 @@ from jaxmarl.environments.overcooked_v2.utils import (
 
 class ObservationType(str, Enum):
     SPARSE = "sparse"
-    EMBEDDED = "embedded"
 
 
 @chex.dataclass
@@ -130,7 +123,7 @@ class OvercookedV2(MultiAgentEnv):
         self.observation_type = observation_type
         self.agent_view_size = agent_view_size
         self.indicate_successful_delivery = indicate_successful_delivery
-        self.obs_shape = self._get_obs_shape(observation_type)
+        self.obs_shape = self._get_obs_shape()
 
         self.max_steps = max_steps
 
@@ -246,14 +239,6 @@ class OvercookedV2(MultiAgentEnv):
         recipe = self._sample_recipe(subkey)
 
         ingredient_permutations = None
-        # if self.op_ingredient_permutations is not None:
-
-        #     def _ingredient_permutation(key):
-        #         return jax.random.permutation(key, layout.num_ingredients)
-
-        #     key, subkey = jax.random.split(key)
-        #     ing_keys = jax.random.split(subkey, num_agents)
-        #     ingredient_permutations = jax.vmap(_ingredient_permutation)(ing_keys)
         if self.op_ingredient_permutations:
             ingredient_permutations = self._sample_op_ingredient_permutations(key)
 
@@ -488,10 +473,8 @@ class OvercookedV2(MultiAgentEnv):
         match self.observation_type:
             case ObservationType.SPARSE:
                 all_obs = self.get_obs_legacy(state)
-            case ObservationType.ENCODED:
-                all_obs = self.get_obs_encoded(state)
             case _:
-                raise ValueError("Invalid observation type")
+                raise ValueError(f"Invalid observation type: {self.observation_type}")
 
         def _mask_obs(obs, agent):
             view_size = self.agent_view_size
@@ -517,10 +500,7 @@ class OvercookedV2(MultiAgentEnv):
 
         return {f"agent_{i}": obs for i, obs in enumerate(all_obs)}
 
-    def _get_obs_shape(
-        self,
-        obs_type: ObservationType,
-    ) -> Tuple[int]:
+    def _get_obs_shape(self) -> Tuple[int]:
         if self.agent_view_size:
             view_size = self.agent_view_size * 2 + 1
             view_width = min(self.width, view_size)
@@ -529,74 +509,17 @@ class OvercookedV2(MultiAgentEnv):
             view_width = self.width
             view_height = self.height
 
-        if obs_type == ObservationType.SPARSE:
-            num_ingredients = self.layout.num_ingredients
-            num_layers = 18 + 4 * (num_ingredients + 2)
+        match self.observation_type:
+            case ObservationType.SPARSE:
+                num_ingredients = self.layout.num_ingredients
+                num_layers = 18 + 4 * (num_ingredients + 2)
 
-            if self.indicate_successful_delivery:
-                num_layers += 1
+                if self.indicate_successful_delivery:
+                    num_layers += 1
 
-            return (view_height, view_width, num_layers)
-        elif obs_type == ObservationType.EMBEDDED:
-            return (view_height, view_width, 2)
-        else:
-            raise ValueError(f"Invalid observation type: {obs_type}")
-
-    def get_encoded_obs_vocab_sizes(self) -> List[int]:
-        return [
-            encoded_object_num(),
-            encoded_ingreidients_num(self.layout.num_ingredients),
-        ]
-
-    def get_obs_encoded(self, state: State) -> Dict[str, chex.Array]:
-        """
-        Return a full observation, of size (height x width x 3)
-
-        First channel contains static Items such as walls, pots, goal, plate_pile and ingredient_piles
-        Second channel contains dynamic Items such as plates, ingredients and dishes
-        Third channel contains agent positions and orientations
-        """
-
-        # TODO: implement this
-
-        agents = state.agents
-        obs = state.grid
-
-        recipe_indicator_mask = obs[:, :, 0] == StaticObject.RECIPE_INDICATOR
-
-        new_ingredients_layer = jnp.where(
-            recipe_indicator_mask, state.recipe, obs[:, :, 1]
-        )
-        obs = obs.at[:, :, 1].set(new_ingredients_layer)
-
-        def _include_agents(grid, agent):
-            pos = agent.pos
-            inventory = agent.inventory
-            direction = agent.dir
-            return (
-                grid.at[pos.y, pos.x].set([StaticObject.AGENT, inventory, direction]),
-                None,
-            )
-
-        obs, _ = jax.lax.scan(_include_agents, obs, agents)
-
-        def _agent_obs(agent):
-            pos = agent.pos
-            return obs.at[pos.y, pos.x, 0].set(StaticObject.SELF_AGENT)
-
-        obs_all = jax.vmap(_agent_obs)(agents)
-
-        def _embed_obs(cell):
-            static_obj = cell[0]
-            dynamic_obj = cell[1]
-            extra_info = cell[2]
-
-            enc_obj = encode_object(static_obj, extra_info)
-            enc_ing = encode_ingreidients(dynamic_obj)
-
-            return jnp.array([enc_obj, enc_ing], dtype=jnp.int32)
-
-        return jax.vmap(jax.vmap(jax.vmap(_embed_obs)))(obs_all)
+                return (view_height, view_width, num_layers)
+            case _:
+                raise ValueError(f"Invalid observation type: {self.observation_type}")
 
     def get_obs_legacy(self, state: State) -> Dict[str, chex.Array]:
 
