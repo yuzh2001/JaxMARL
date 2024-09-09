@@ -6,8 +6,8 @@ import itertools
 
 cramped_room = """
 WWPWW
-OA AO
-W   W
+O  AO
+WA  W
 WBWXW
 """
 
@@ -21,8 +21,8 @@ WBWXW
 asymm_advantages = """
 WWWWWWWWW
 O WXWOW X
-W   P   W
-W A PA  W
+W   P A W
+WA  P   W
 WWWBWBWWW
 """
 
@@ -68,9 +68,9 @@ WWWXW
 
 counter_circuit = """
 WWWPPWWW
-W A    W
+W      W
 B WWWW X
-W     AW
+WA    AW
 WWWOOWWW
 """
 

@@ -33,6 +33,10 @@ class StaticObject(IntEnum):
         idx = obj - StaticObject.INGREDIENT_PILE_BASE
         return DynamicObject.ingredient(idx)
 
+    @staticmethod
+    def ingredient_pile(idx):
+        return StaticObject.INGREDIENT_PILE_BASE + idx
+
 
 class DynamicObject(IntEnum):
     EMPTY = 0
@@ -164,6 +168,9 @@ class Position:
 
     def to_array(self):
         return jnp.stack([self.x, self.y], axis=-1)
+
+    def delta(self, other):
+        return jnp.array([self.x - other.x, self.y - other.y])
 
 
 @chex.dataclass
