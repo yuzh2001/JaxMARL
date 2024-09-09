@@ -32,13 +32,16 @@ from jaxmarl.environments.overcooked_v2.settings import (
 )
 from jaxmarl.environments.overcooked_v2.utils import (
     compute_view_box,
+    get_closest_true_pos,
+    mark_adjacent_cells,
     tree_select,
     compute_enclosed_spaces,
 )
 
 
 class ObservationType(str, Enum):
-    SPARSE = "sparse"
+    DEFAULT = "default"
+    FEATURIZED = "featurized"
 
 
 @chex.dataclass
@@ -68,7 +71,7 @@ class OvercookedV2(MultiAgentEnv):
         self,
         layout: Union[str, Layout] = "cramped_room",
         max_steps: int = 400,
-        observation_type: ObservationType = ObservationType.SPARSE,
+        observation_type: ObservationType = ObservationType.DEFAULT,
         agent_view_size: Optional[int] = None,
         random_reset: bool = False,
         random_agent_positions: bool = False,
@@ -132,7 +135,9 @@ class OvercookedV2(MultiAgentEnv):
         self.random_reset = random_reset
         self.random_agent_positions = random_agent_positions
 
-        self.start_cooking_interaction = start_cooking_interaction
+        self.start_cooking_interaction = jnp.array(
+            start_cooking_interaction, dtype=jnp.bool_
+        )
         self.negative_rewards = negative_rewards
         self.sample_recipe_on_delivery = jnp.array(
             sample_recipe_on_delivery, dtype=jnp.bool_
@@ -469,10 +474,43 @@ class OvercookedV2(MultiAgentEnv):
             grid=new_grid,
         )
 
+    def _get_obs_shape(self) -> Tuple[int]:
+        if self.agent_view_size:
+            view_size = self.agent_view_size * 2 + 1
+            view_width = min(self.width, view_size)
+            view_height = min(self.height, view_size)
+        else:
+            view_width = self.width
+            view_height = self.height
+
+        match self.observation_type:
+            case ObservationType.DEFAULT:
+                num_ingredients = self.layout.num_ingredients
+                num_layers = 18 + 4 * (num_ingredients + 2)
+
+                if self.indicate_successful_delivery:
+                    num_layers += 1
+
+                return (view_height, view_width, num_layers)
+            case ObservationType.FEATURIZED:
+                num_pot_features = 10
+                base_features = 28
+
+                # TODO: maybe pass this as argument
+                num_pots = 2
+                total_features = self.num_agents * (
+                    num_pots * num_pot_features + base_features
+                )
+                return (total_features,)
+            case _:
+                raise ValueError(f"Invalid observation type: {self.observation_type}")
+
     def get_obs(self, state: State) -> Dict[str, chex.Array]:
         match self.observation_type:
-            case ObservationType.SPARSE:
-                all_obs = self.get_obs_legacy(state)
+            case ObservationType.DEFAULT:
+                all_obs = self.get_obs_default(state)
+            case ObservationType.FEATURIZED:
+                all_obs = self.get_obs_featurized(state)
             case _:
                 raise ValueError(f"Invalid observation type: {self.observation_type}")
 
@@ -500,28 +538,7 @@ class OvercookedV2(MultiAgentEnv):
 
         return {f"agent_{i}": obs for i, obs in enumerate(all_obs)}
 
-    def _get_obs_shape(self) -> Tuple[int]:
-        if self.agent_view_size:
-            view_size = self.agent_view_size * 2 + 1
-            view_width = min(self.width, view_size)
-            view_height = min(self.height, view_size)
-        else:
-            view_width = self.width
-            view_height = self.height
-
-        match self.observation_type:
-            case ObservationType.SPARSE:
-                num_ingredients = self.layout.num_ingredients
-                num_layers = 18 + 4 * (num_ingredients + 2)
-
-                if self.indicate_successful_delivery:
-                    num_layers += 1
-
-                return (view_height, view_width, num_layers)
-            case _:
-                raise ValueError(f"Invalid observation type: {self.observation_type}")
-
-    def get_obs_legacy(self, state: State) -> Dict[str, chex.Array]:
+    def get_obs_default(self, state: State) -> Dict[str, chex.Array]:
 
         width = self.width
         height = self.height
@@ -542,7 +559,7 @@ class OvercookedV2(MultiAgentEnv):
             ]
         )
         static_layers = static_objects[..., None] == static_encoding
-        print("static_layers: ", static_layers.shape)
+        # print("static_layers: ", static_layers.shape)
 
         def _ingridient_layers(ingredients, ingredient_mapping=None):
             shift = jnp.array([0, 1] + [2 * (i + 1) for i in range(num_ingredients)])
@@ -648,17 +665,17 @@ class OvercookedV2(MultiAgentEnv):
             all_agent_layers = jnp.sum(agent_layers, axis=0)
 
             other_agent_layers = all_agent_layers - agent_layer
-            print("agent_layer: ", agent_layer.shape)
+            # print("agent_layer: ", agent_layer.shape)
 
             ingredients_layers = _ingridient_layers(
                 ingredients, ingredient_mapping=ingredient_mapping
             )
-            print("ingredients_layers: ", ingredients_layers.shape)
+            # print("ingredients_layers: ", ingredients_layers.shape)
 
             recipe_layers = _ingridient_layers(
                 recipe_ingridients, ingredient_mapping=ingredient_mapping
             )
-            print("recipe_layers: ", recipe_layers.shape)
+            # print("recipe_layers: ", recipe_layers.shape)
 
             ingredient_pile_encoding = jnp.array(
                 [StaticObject.INGREDIENT_PILE_BASE + i for i in range(num_ingredients)]
@@ -684,6 +701,247 @@ class OvercookedV2(MultiAgentEnv):
             )
 
         return jax.vmap(_agent_obs)(jnp.arange(self.num_agents))
+
+    def get_obs_featurized(self, state: State) -> Dict[str, chex.Array]:
+        """
+        Observation to match featurized observation from OvercookedAI, this method is used to featurize the state of the environment.
+        Encode state with some manually designed features. Works for arbitrary number of players
+
+        Arguments:
+            overcooked_state (OvercookedState): state we wish to featurize
+            num_pots (int): Encode the state (ingredients, whether cooking or not, etc) of the 'num_pots' closest pots to each player.
+                If i < num_pots pots are reachable by player i, then pots [i+1, num_pots] are encoded as all zeros. Changing this
+                impacts the shape of the feature encoding
+
+        Returns:
+            ordered_features (list[np.Array]): The ith element contains a player-centric featurized view for the ith player
+
+            The encoding for player i is as follows:
+
+                [player_i_features, other_player_features player_i_dist_to_other_players, player_i_position]
+
+                player_{i}_features (length num_pots*10 + 28):
+                    pi_orientation: length 4 one-hot-encoding of direction currently facing
+                    pi_obj: length 4 one-hot-encoding of object currently being held (all 0s if no object held)
+                    pi_closest_{onion|tomato|dish|soup|serving|empty_counter}: (dx, dy) where dx = x dist to item, dy = y dist to item. (0, 0) if item is currently held
+                    pi_cloest_soup_n_{onions|tomatoes}: int value for number of this ingredient in closest soup
+                    pi_closest_pot_{j}_exists: {0, 1} depending on whether jth closest pot found. If 0, then all other pot features are 0. Note: can
+                        be 0 even if there are more than j pots on layout, if the pot is not reachable by player i
+                    pi_closest_pot_{j}_{is_empty|is_full|is_cooking|is_ready}: {0, 1} depending on boolean value for jth closest pot
+                    pi_closest_pot_{j}_{num_onions|num_tomatoes}: int value for number of this ingredient in jth closest pot
+                    pi_closest_pot_{j}_cook_time: int value for seconds remaining on soup. -1 if no soup is cooking
+                    pi_closest_pot_{j}: (dx, dy) to jth closest pot from player i location
+                    pi_wall: length 4 boolean value of whether player i has wall in each direction
+
+                other_player_features (length (num_players - 1)*(num_pots*10 + 24)):
+                    ordered concatenation of player_{j}_features for j != i
+
+                player_i_dist_to_other_players (length (num_players - 1)*2):
+                    [player_j.pos - player_i.pos for j != i]
+
+                player_i_position (length 2)
+        """
+        if self.layout.num_ingredients > 1:
+            # environment dynamics with two ingredients differs to the original OvercookedAI
+            raise NotImplementedError(
+                "Featurized observation not implemented for more than 1 ingredient"
+            )
+
+        # TODO: maybe pass as argument
+        num_pots = 2
+
+        onion = DynamicObject.ingredient(0)
+        recipe = 3 * onion
+        soup = recipe | DynamicObject.COOKED | DynamicObject.PLATE
+
+        def _player_features(agent):
+            pos = agent.pos
+            direction = agent.dir
+            inv = agent.inventory
+
+            reachable_area = self.enclosed_spaces == self.enclosed_spaces[pos.y, pos.x]
+            reachable_area = mark_adjacent_cells(reachable_area)
+
+            # pi_orientation: [NORTH, SOUTH, EAST, WEST]
+            dir_features = jax.nn.one_hot(direction, 4)
+
+            # pi_obj: ["onion", "soup", "dish", "tomato"]
+            items = jnp.array(
+                [
+                    DynamicObject.ingredient(0),
+                    soup,
+                    DynamicObject.PLATE,
+                    DynamicObject.ingredient(1),
+                ]
+            )
+            inv_features = inv[..., None] == items
+
+            def _closest_features(
+                static_locator=None,
+                dynamic_locator=None,
+                no_ingredients=False,
+            ):
+                mask = jnp.zeros((self.height, self.width), dtype=jnp.bool_)
+                if static_locator:
+                    static_mask = state.grid[:, :, 0] == static_locator
+                    if no_ingredients:
+                        static_mask &= state.grid[:, :, 1] == DynamicObject.EMPTY
+                    mask |= static_mask
+                if dynamic_locator:
+                    mask |= state.grid[:, :, 1] == dynamic_locator
+                    mask = mask.at[pos.y, pos.x].set(inv == dynamic_locator)
+
+                mask &= reachable_area
+
+                obj_pos, is_valid = get_closest_true_pos(mask, pos)
+                delta = obj_pos.delta(pos)
+                return jax.lax.select(is_valid, delta, jnp.array([0, 0]))
+
+            # pi_closest_{onion|tomato|dish|soup|serving|empty_counter}
+            onion_features = _closest_features(
+                static_locator=StaticObject.ingredient_pile(0),
+                dynamic_locator=DynamicObject.ingredient(0),
+            )
+            tomato_features = _closest_features(
+                static_locator=StaticObject.ingredient_pile(1),
+                dynamic_locator=DynamicObject.ingredient(1),
+            )
+            dish_features = _closest_features(
+                static_locator=StaticObject.PLATE_PILE,
+                dynamic_locator=DynamicObject.PLATE,
+            )
+            soup_features = _closest_features(dynamic_locator=soup)
+            serving_features = _closest_features(static_locator=StaticObject.GOAL)
+            empty_counter_features = _closest_features(
+                static_locator=StaticObject.WALL, no_ingredients=True
+            )
+
+            # pi_closest_soup_n_{onions|tomatoes}
+            # we assume that recipe is always 3 onions
+            soup_onions = jax.lax.select(jnp.any(state.grid[:, :, 1] == soup), 3, 0)
+            soup_tomatoes = 0
+            soup_ingredient_features = jnp.array([soup_onions, soup_tomatoes])
+
+            def _compute_pot_features(agent, pot_pos, pot_ing, pot_timer):
+                # pi_closest_pot_{j}_exists
+                pot_exists = 1
+
+                # pi_closest_pot_{j}_{is_empty|is_full|is_cooking|is_ready}
+                pot_empty = pot_ing == DynamicObject.EMPTY
+                pot_full = DynamicObject.ingredient_count(pot_ing) == 3
+                pot_cooking = pot_timer > 0
+                pot_ready = pot_ing & DynamicObject.COOKED
+
+                # pi_closest_pot_{j}_{num_onions|num_tomatoes}
+                num_onions = DynamicObject.ingredient_count(pot_ing)
+                num_tomatoes = 0
+
+                # pi_closest_pot_{j}_cook_time
+                cook_time = pot_timer
+
+                # pi_closest_pot_{j}
+                pot_deltas = pot_pos.delta(agent.pos)
+
+                pot_features = jnp.array(
+                    [
+                        pot_exists,
+                        pot_empty,
+                        pot_full,
+                        pot_cooking,
+                        pot_ready,
+                        num_onions,
+                        num_tomatoes,
+                        cook_time,
+                        *pot_deltas,
+                    ]
+                )
+                return pot_features
+
+            pot_mask = state.grid[:, :, 0] == StaticObject.POT
+            pot_mask &= reachable_area
+
+            all_pot_features = jnp.zeros((num_pots, 10))
+            for i in range(num_pots):
+
+                def _process_pot(pos):
+                    y, x = pos.y, pos.x
+                    pot_ing = state.grid[y, x, 1]
+                    pot_timer = state.grid[y, x, 2]
+
+                    return _compute_pot_features(agent, pos, pot_ing, pot_timer)
+
+                pot_pos, is_valid = get_closest_true_pos(pot_mask, pos)
+
+                pot_features = jax.lax.cond(
+                    is_valid,
+                    _process_pot,
+                    lambda _: jnp.zeros(10, dtype=jnp.int32),
+                    pot_pos,
+                )
+                pot_mask = pot_mask.at[pot_pos.y, pot_pos.x].set(False)
+
+                all_pot_features = all_pot_features.at[i].set(pot_features)
+
+            all_pot_features = all_pot_features.flatten()
+
+            # pi_wall: [NORTH, SOUTH, EAST, WEST]
+            wall_mask = state.grid[:, :, 0] == StaticObject.WALL
+            wall_features = jnp.array(
+                [
+                    wall_mask[pos.y - 1, pos.x],
+                    wall_mask[pos.y + 1, pos.x],
+                    wall_mask[pos.y, pos.x + 1],
+                    wall_mask[pos.y, pos.x - 1],
+                ]
+            )
+
+            return jnp.concatenate(
+                [
+                    dir_features,
+                    inv_features,
+                    onion_features,
+                    tomato_features,
+                    dish_features,
+                    soup_features,
+                    serving_features,
+                    empty_counter_features,
+                    soup_ingredient_features,
+                    all_pot_features,
+                    wall_features,
+                ]
+            )
+
+        all_player_features = jax.vmap(_player_features)(state.agents)
+
+        def _agent_obs(agent, i):
+            agent_features = all_player_features[i]
+
+            other_agent_selector = jnp.arange(self.num_agents - 1)
+            other_agent_selector += other_agent_selector >= i
+
+            other_player_features = jnp.concatenate(
+                all_player_features[other_agent_selector], axis=-1
+            )
+
+            def _dist_to_other_players(other_agent):
+                return other_agent.pos.delta(agent.pos)
+
+            dist_to_other_players = jax.vmap(_dist_to_other_players)(state.agents)
+            dist_to_other_players = dist_to_other_players[
+                other_agent_selector
+            ].flatten()
+
+            return jnp.concatenate(
+                [
+                    agent_features,
+                    other_player_features,
+                    dist_to_other_players,
+                    agent.pos.to_array(),
+                ],
+                axis=-1,
+            )
+
+        return jax.vmap(_agent_obs)(state.agents, jnp.arange(self.num_agents))
 
     def step_agents(
         self,

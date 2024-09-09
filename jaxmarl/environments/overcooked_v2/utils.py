@@ -62,3 +62,38 @@ def compute_enclosed_spaces(empty_mask: jnp.ndarray) -> jnp.ndarray:
     initial_val = (False, id_grid)
     _, res = jax.lax.while_loop(_cond_fun, _body_fun, initial_val)
     return res
+
+def mark_adjacent_cells(mask):
+    # Shift the mask in four directions: up, down, left, right
+    up = jnp.roll(mask, shift=-1, axis=0)
+    down = jnp.roll(mask, shift=1, axis=0)
+    left = jnp.roll(mask, shift=-1, axis=1)
+    right = jnp.roll(mask, shift=1, axis=1)
+    
+    # Prevent wrapping by zeroing out the rolled values at the boundaries
+    up = up.at[-1, :].set(False)
+    down = down.at[0, :].set(False)
+    left = left.at[:, -1].set(False)
+    right = right.at[:, 0].set(False)
+
+    # Combine the original mask with the shifted versions
+    expanded_mask = mask | up | down | left | right
+    
+    return expanded_mask
+
+
+def get_closest_true_pos(arr: jnp.ndarray, pos: Position) -> Position:
+    height, width = arr.shape
+
+    y, x = pos.y, pos.x
+    yy, xx = jnp.meshgrid(jnp.arange(height), jnp.arange(width), indexing="ij")
+
+    dist = jnp.abs(yy - y) + jnp.abs(xx - x)
+    dist = jnp.where(arr, dist, jnp.inf)
+
+    min_idx = jnp.argmin(dist)
+    min_y, min_x = jnp.divmod(min_idx, width)
+
+    is_valid = jnp.any(arr)
+
+    return Position(x=min_x, y=min_y), is_valid
