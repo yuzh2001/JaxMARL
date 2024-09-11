@@ -71,7 +71,9 @@ class OvercookedV2(MultiAgentEnv):
         self,
         layout: Union[str, Layout] = "cramped_room",
         max_steps: int = 400,
-        observation_type: ObservationType = ObservationType.DEFAULT,
+        observation_type: Union[
+            ObservationType, List[ObservationType]
+        ] = ObservationType.DEFAULT,
         agent_view_size: Optional[int] = None,
         random_reset: bool = False,
         random_agent_positions: bool = False,
@@ -88,7 +90,7 @@ class OvercookedV2(MultiAgentEnv):
         Args:
             layout (Layout): The layout configuration for the environment, defaulting to "cramped_room". Either a Layout object or a string key to look up a Layout in overcooked_v2_layouts.
             max_steps (int): The maximum number of steps in the environment.
-            observation_type (ObservationType): The type of observation to return, either LEGACY or ENCODED.
+            observation_type (Union[ObservationType, List[ObservationType]]): The type of observation to use. Can be a single ObservationType or a list of ObservationTypes, one for each agent.
             agent_view_size (Optional[int]): The number of blocks the agent can view in each direction, None for full grid.
             random_reset (bool): Whether to reset the environment with random agent positions, inventories and pot states.
             random_agent_positions (bool): Whether to randomize agent positions. Agents will not be moved outside of their room if they are placed in an enclosed space.
@@ -123,7 +125,14 @@ class OvercookedV2(MultiAgentEnv):
         self.agents = [f"agent_{i}" for i in range(num_agents)]
         self.action_set = jnp.array(list(Actions))
 
+        if isinstance(observation_type, list):
+            if len(observation_type) != num_agents:
+                raise ValueError(
+                    "Number of observation types must match the number of agents"
+                )
+
         self.observation_type = observation_type
+
         self.agent_view_size = agent_view_size
         self.indicate_successful_delivery = indicate_successful_delivery
         self.obs_shape = self._get_obs_shape()
@@ -483,30 +492,53 @@ class OvercookedV2(MultiAgentEnv):
             view_width = self.width
             view_height = self.height
 
-        match self.observation_type:
-            case ObservationType.DEFAULT:
-                num_ingredients = self.layout.num_ingredients
-                num_layers = 18 + 4 * (num_ingredients + 2)
+        def _get_obs_shape_single(obs_type):
+            match obs_type:
+                case ObservationType.DEFAULT:
+                    num_ingredients = self.layout.num_ingredients
+                    num_layers = 18 + 4 * (num_ingredients + 2)
 
-                if self.indicate_successful_delivery:
-                    num_layers += 1
+                    if self.indicate_successful_delivery:
+                        num_layers += 1
 
-                return (view_height, view_width, num_layers)
-            case ObservationType.FEATURIZED:
-                num_pot_features = 10
-                base_features = 28
+                    return (view_height, view_width, num_layers)
+                case ObservationType.FEATURIZED:
+                    num_pot_features = 10
+                    base_features = 28
 
-                # TODO: maybe pass this as argument
-                num_pots = 2
-                total_features = self.num_agents * (
-                    num_pots * num_pot_features + base_features
-                )
-                return (total_features,)
-            case _:
-                raise ValueError(f"Invalid observation type: {self.observation_type}")
+                    # TODO: maybe pass this as argument
+                    num_pots = 2
+                    total_features = self.num_agents * (
+                        num_pots * num_pot_features + base_features
+                    )
+                    return (total_features,)
+                case _:
+                    raise ValueError(
+                        f"Invalid observation type: {self.observation_type}"
+                    )
+
+        if isinstance(self.observation_type, list):
+            return [
+                _get_obs_shape_single(obs_type) for obs_type in self.observation_type
+            ]
+
+        return _get_obs_shape_single(self.observation_type)
 
     def get_obs(self, state: State) -> Dict[str, chex.Array]:
-        match self.observation_type:
+        if not isinstance(self.observation_type, list):
+            return self.get_obs_for_type(state, self.observation_type)
+
+        all_obs = {}
+        for i, obs_type in enumerate(self.observation_type):
+            obs = self.get_obs_for_type(state, obs_type)
+            key = f"agent_{i}"
+            all_obs[key] = obs[key]
+        return all_obs
+
+    def get_obs_for_type(
+        self, state: State, obs_type: ObservationType
+    ) -> Dict[str, chex.Array]:
+        match obs_type:
             case ObservationType.DEFAULT:
                 all_obs = self.get_obs_default(state)
             case ObservationType.FEATURIZED:
@@ -939,6 +971,7 @@ class OvercookedV2(MultiAgentEnv):
                     agent.pos.to_array(),
                 ],
                 axis=-1,
+                dtype=jnp.int32,
             )
 
         return jax.vmap(_agent_obs)(state.agents, jnp.arange(self.num_agents))
