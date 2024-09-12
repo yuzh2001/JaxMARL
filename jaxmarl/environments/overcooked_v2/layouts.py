@@ -178,18 +178,19 @@ WWRWWW
 
 # Demo Cook Layouts
 demo_cook_simple = """
-WWWWWW2W0WW
+WWWWWR2W0WW
 0      W  B
-W   R APA X
+W     APA X
 1      W  B
-WWWWWW2W1WW
+WWWWWR2W1WW
 """
 demo_cook_wide = """
-WWWW0X1WWWW
+WWWWBXBWWWW
+WWW0 A 1WWW
+WWWWWPWWWWW
 W    A    W
-WWWWBPBWWWW
-0    A    1
-WWWWWRWWWWW
+0  W3R3W  0
+W1WWWWWWW1W
 """
 
 
