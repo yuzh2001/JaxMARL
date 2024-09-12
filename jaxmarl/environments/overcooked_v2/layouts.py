@@ -4,20 +4,13 @@ from typing import List, Tuple, Optional
 from dataclasses import dataclass
 import itertools
 
+# Layouts from Overcooked-AI
 cramped_room = """
 WWPWW
 O  AO
 WA  W
 WBWXW
 """
-
-cramped_room_v2 = """
-WWPWW
-0A A1
-W   R
-WBWXW
-"""
-
 asymm_advantages = """
 WWWWWWWWW
 O WXWOW X
@@ -25,31 +18,6 @@ W   P A W
 WA  P   W
 WWWBWBWWW
 """
-
-asymm_advantages_recipes_center = """
-WWWWWWWWW
-0 WXR01 X
-1   P   W
-W A PA  W
-WWWBWBWWW
-"""
-
-asymm_advantages_recipes_right = """
-WWWWWWWWW
-0 WXW01 X
-1   P   R
-W A PA  W
-WWWBWBWWW
-"""
-
-asymm_advantages_recipes_left = """
-WWWWWWWWW
-0 WXW01 X
-1   P   W
-R A PA  W
-WWWBWBWWW
-"""
-
 coord_ring = """
 WWWPW
 W A P
@@ -57,7 +25,6 @@ BAW W
 O   W
 WOXWW
 """
-
 forced_coord = """
 WWWPW
 O WAP
@@ -65,7 +32,6 @@ OAW W
 B W W
 WWWXW
 """
-
 counter_circuit = """
 WWWPPWWW
 W      W
@@ -74,14 +40,35 @@ WA    AW
 WWWOOWWW
 """
 
-two_rooms_both = """
-W01BWB10W
-W   W   R
-P A W A W
-W   W   X
-WWWWWWWWW
-"""
 
+# Adapted layouts
+cramped_room_v2 = """
+WWPWW
+0A A1
+W   R
+WBWXW
+"""
+asymm_advantages_recipes_center = """
+WWWWWWWWW
+0 WXR01 X
+1   P A W
+WA  P   W
+WWWBWBWWW
+"""
+asymm_advantages_recipes_right = """
+WWWWWWWWW
+0 WXW01 X
+1   P A R
+WA  P   W
+WWWBWBWWW
+"""
+asymm_advantages_recipes_left = """
+WWWWWWWWW
+0 WXW01 X
+1   P A W
+RA  P   W
+WWWBWBWWW
+"""
 two_rooms = """
 WWWWWB10W
 W   W   R
@@ -90,13 +77,21 @@ W   W   X
 WWWWWWWWW
 """
 
+
+# Other Layouts
+two_rooms_both = """
+W01BWB10W
+W   W   R
+P A W A W
+W   W   X
+WWWWWWWWW
+"""
 long_room = """
 WWWWWWWWWWWWWWW
 B            AP
 0             X
 WWWWWWWWWWWWWWW
 """
-
 fun_coordination = """
 WWWWWWWWW
 0   X   2
@@ -104,7 +99,6 @@ RA  P  AW
 1   B   3
 WWWWWWWWW
 """
-
 more_fun_coordination = """
 WWWWWWWWW
 W   X   W
@@ -113,7 +107,6 @@ RA  P  A1
 W   B   W
 WWWWWWWWW
 """
-
 fun_symmetries_plates = """
 WWWWWWW
 B  W  0
@@ -121,8 +114,6 @@ R APA X
 B  W  1
 WWWWWWW
 """
-
-
 fun_symmetries = """
 WWWWBWW
 2  W  0
@@ -130,7 +121,6 @@ R APA X
 2  W  1
 WWWWBWW
 """
-
 fun_symmetries1 = """
 WWWWWBWW
 2  WW  0
@@ -138,7 +128,15 @@ R AWPA X
 2  WW  1
 WWWWWBWW
 """
+overcookedv2_demo = """
+WWPWW
+0A A1
+L   R
+WBWXW
+"""
 
+
+# Extended Cat-Dog Problem Layouts
 grounded_coord_simple = """
 WW2WWWWW
 W  WB  0
@@ -146,7 +144,6 @@ R ALPA X
 W  WB  1
 WW2WWWWW
 """
-
 grounded_coord_ring = """
 WWW2R2WWW
 W       W
@@ -159,6 +156,8 @@ W       W
 WWW2R2WWW
 """
 
+
+# Test-Time Protocol Formation Layouts
 test_time_simple = """
 WW2WWWWW
 W  WB  0
@@ -166,8 +165,18 @@ R AWPA X
 W  WB  1
 WW2WWWWW
 """
+test_time_wide = """
+WWXBWW
+0 A  0
+1    1
+WPWPWW
+3 A  3
+W    W
+WWRWWW
+"""
 
 
+# Demo Cook Layouts
 demo_cook_simple = """
 WWWWWW2W0WW
 0      W  B
@@ -175,20 +184,12 @@ W   R APA X
 1      W  B
 WWWWWW2W1WW
 """
-
 demo_cook_wide = """
 WWWW0X1WWWW
 W    A    W
 WWWWBPBWWWW
 0    A    1
 WWWWWRWWWWW
-"""
-
-overcookedv2_demo = """
-WWPWW
-0A A1
-L   R
-WBWXW
 """
 
 
@@ -335,11 +336,18 @@ class Layout:
 
 
 overcooked_v2_layouts = {
+    # Overcooked-AI layouts
     "cramped_room": Layout.from_string(cramped_room, possible_recipes=[[0, 0, 0]]),
-    "cramped_room_v2": Layout.from_string(cramped_room_v2),
     "asymm_advantages": Layout.from_string(
         asymm_advantages, possible_recipes=[[0, 0, 0]]
     ),
+    "coord_ring": Layout.from_string(coord_ring, possible_recipes=[[0, 0, 0]]),
+    "forced_coord": Layout.from_string(forced_coord, possible_recipes=[[0, 0, 0]]),
+    "counter_circuit": Layout.from_string(
+        counter_circuit, possible_recipes=[[0, 0, 0]]
+    ),
+    # Adapted layouts
+    "cramped_room_v2": Layout.from_string(cramped_room_v2),
     "asymm_advantages_recipes_center": Layout.from_string(
         asymm_advantages_recipes_center
     ),
@@ -347,12 +355,8 @@ overcooked_v2_layouts = {
         asymm_advantages_recipes_right
     ),
     "asymm_advantages_recipes_left": Layout.from_string(asymm_advantages_recipes_left),
-    "coord_ring": Layout.from_string(coord_ring, possible_recipes=[[0, 0, 0]]),
-    "forced_coord": Layout.from_string(forced_coord, possible_recipes=[[0, 0, 0]]),
-    "counter_circuit": Layout.from_string(
-        counter_circuit, possible_recipes=[[0, 0, 0]]
-    ),
     "two_rooms": Layout.from_string(two_rooms),
+    # Other layouts
     "two_rooms_both": Layout.from_string(two_rooms_both),
     "long_room": Layout.from_string(long_room, possible_recipes=[[0, 0, 0]]),
     "fun_coordination": Layout.from_string(
@@ -370,19 +374,25 @@ overcooked_v2_layouts = {
     "fun_symmetries1": Layout.from_string(
         fun_symmetries1, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
+    # Extended Cat-Dog Problem Layouts
     "grounded_coord_simple": Layout.from_string(
         grounded_coord_simple, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
     "grounded_coord_ring": Layout.from_string(
         grounded_coord_ring, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
+    # Test-Time Protocol Formation Layouts
+    "test_time_simple": Layout.from_string(
+        test_time_simple, possible_recipes=[[0, 0, 0], [1, 1, 1]]
+    ),
+    "test_time_wide": Layout.from_string(
+        test_time_wide, possible_recipes=[[0, 0, 0], [1, 1, 1]]
+    ),
+    # Demo Cook Layouts
     "demo_cook_simple": Layout.from_string(
         demo_cook_simple, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
     "demo_cook_wide": Layout.from_string(
         demo_cook_wide, possible_recipes=[[0, 0, 0], [1, 1, 1]]
-    ),
-    "test_time_simple": Layout.from_string(
-        test_time_simple, possible_recipes=[[0, 0, 0], [1, 1, 1]]
     ),
 }
