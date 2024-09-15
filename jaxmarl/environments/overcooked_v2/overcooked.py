@@ -32,6 +32,7 @@ from jaxmarl.environments.overcooked_v2.settings import (
 )
 from jaxmarl.environments.overcooked_v2.utils import (
     compute_view_box,
+    get_closest_true_pos_no_directions,
     get_closest_true_pos,
     mark_adjacent_cells,
     tree_select,
@@ -781,10 +782,13 @@ class OvercookedV2(MultiAgentEnv):
 
         # TODO: maybe pass as argument
         num_pots = 2
+        reproduce_overcooked_ai = True
 
         onion = DynamicObject.ingredient(0)
         recipe = 3 * onion
         soup = recipe | DynamicObject.COOKED | DynamicObject.PLATE
+
+        move_area = state.grid[:, :, 0] == StaticObject.EMPTY
 
         def _player_features(agent):
             pos = agent.pos
@@ -812,6 +816,7 @@ class OvercookedV2(MultiAgentEnv):
                 static_locator=None,
                 dynamic_locator=None,
                 no_ingredients=False,
+                not_in_pot=True,
             ):
                 mask = jnp.zeros((self.height, self.width), dtype=jnp.bool_)
                 if static_locator:
@@ -820,12 +825,22 @@ class OvercookedV2(MultiAgentEnv):
                         static_mask &= state.grid[:, :, 1] == DynamicObject.EMPTY
                     mask |= static_mask
                 if dynamic_locator:
-                    mask |= state.grid[:, :, 1] == dynamic_locator
+                    dynamic_mask = state.grid[:, :, 1] == dynamic_locator
+                    if not_in_pot:
+                        dynamic_mask &= state.grid[:, :, 0] != StaticObject.POT
+                    if reproduce_overcooked_ai:
+                        dynamic_mask &= state.grid[:, :, 0] != StaticObject.WALL
+                    mask |= dynamic_mask
                     mask = mask.at[pos.y, pos.x].set(inv == dynamic_locator)
 
                 mask &= reachable_area
 
-                obj_pos, is_valid = get_closest_true_pos(mask, pos)
+                # obj_pos, is_valid = get_closest_true_pos(mask, pos)
+                # obj_pos, is_valid = get_closest_true_pos(mask, reachable_area, pos, dir)
+                obj_pos, is_valid = get_closest_true_pos(
+                    mask, move_area, pos, direction
+                )
+
                 delta = obj_pos.delta(pos)
                 return jax.lax.select(is_valid, delta, jnp.array([0, 0]))
 
@@ -847,10 +862,17 @@ class OvercookedV2(MultiAgentEnv):
             empty_counter_features = _closest_features(
                 static_locator=StaticObject.WALL, no_ingredients=True
             )
+            if reproduce_overcooked_ai:
+                empty_counter_features = jnp.array([0, 0])
 
             # pi_closest_soup_n_{onions|tomatoes}
             # we assume that recipe is always 3 onions
-            soup_onions = jax.lax.select(jnp.any(state.grid[:, :, 1] == soup), 3, 0)
+            soup_on_grid_mask = state.grid[:, :, 1] == soup
+            if reproduce_overcooked_ai:
+                soup_on_grid_mask &= state.grid[:, :, 0] != StaticObject.WALL
+            soup_onions = jax.lax.select(
+                jnp.any(soup_on_grid_mask) | (inv == soup), 3, 0
+            )
             soup_tomatoes = 0
             soup_ingredient_features = jnp.array([soup_onions, soup_tomatoes])
 
@@ -862,7 +884,7 @@ class OvercookedV2(MultiAgentEnv):
                 pot_empty = pot_ing == DynamicObject.EMPTY
                 pot_full = DynamicObject.ingredient_count(pot_ing) == 3
                 pot_cooking = pot_timer > 0
-                pot_ready = pot_ing & DynamicObject.COOKED
+                pot_ready = (pot_ing & DynamicObject.COOKED) == DynamicObject.COOKED
 
                 # pi_closest_pot_{j}_{num_onions|num_tomatoes}
                 num_onions = DynamicObject.ingredient_count(pot_ing)
@@ -902,7 +924,10 @@ class OvercookedV2(MultiAgentEnv):
 
                     return _compute_pot_features(agent, pos, pot_ing, pot_timer)
 
-                pot_pos, is_valid = get_closest_true_pos(pot_mask, pos)
+                # pot_pos, is_valid = get_closest_true_pos_no_directions(pot_mask, pos)
+                pot_pos, is_valid = get_closest_true_pos(
+                    pot_mask, move_area, pos, direction
+                )
 
                 pot_features = jax.lax.cond(
                     is_valid,
@@ -917,7 +942,7 @@ class OvercookedV2(MultiAgentEnv):
             all_pot_features = all_pot_features.flatten()
 
             # pi_wall: [NORTH, SOUTH, EAST, WEST]
-            wall_mask = state.grid[:, :, 0] == StaticObject.WALL
+            wall_mask = ~move_area
             wall_features = jnp.array(
                 [
                     wall_mask[pos.y - 1, pos.x],
@@ -927,6 +952,113 @@ class OvercookedV2(MultiAgentEnv):
                 ]
             )
 
+            # d = {
+            #     {
+            #         "p0_orientation": dir_features
+            #         "p0_objs": inv_features,
+            #         "p0_closest_onion": onion_features,
+            #         "p0_closest_tomato": tomato_features,
+            #         "p0_closest_dish": array([0, 1]),
+            #         "p0_closest_soup": array([0, 0]),
+            #         "p0_closest_soup_n_onions": array([0]),
+            #         "p0_closest_soup_n_tomatoes": array([0]),
+            #         "p0_closest_serving": array([2, 1]),
+            #         "p0_closest_empty_counter": array([0, 0]),
+            #         "p0_closest_pot_0_exists": array([1]),
+            #         "p0_closest_pot_0_is_empty": array([1]),
+            #         "p0_closest_pot_0_is_full": array([0]),
+            #         "p0_closest_pot_0_is_cooking": array([0]),
+            #         "p0_closest_pot_0_is_ready": array([0]),
+            #         "p0_closest_pot_0_num_onions": array([0]),
+            #         "p0_closest_pot_0_num_tomatoes": array([0]),
+            #         "p0_closest_pot_0_cook_time": array([0]),
+            #         "p0_closest_pot_0": array([1, -2]),
+            #         "p0_closest_pot_1_exists": array([0]),
+            #         "p0_closest_pot_1_is_empty": array([0]),
+            #         "p0_closest_pot_1_is_full": array([0]),
+            #         "p0_closest_pot_1_is_cooking": array([0]),
+            #         "p0_closest_pot_1_is_ready": array([0]),
+            #         "p0_closest_pot_1_num_onions": array([0]),
+            #         "p0_closest_pot_1_num_tomatoes": array([0]),
+            #         "p0_closest_pot_1_cook_time": array([0]),
+            #         "p0_closest_pot_1": array([0, 0]),
+            #         "p0_wall_0": array([0]),
+            #         "p0_wall_1": array([1]),
+            #         "p0_wall_2": array([0]),
+            #         "p0_wall_3": array([1]),
+            #     }
+            # }
+            d = {
+                "orientation": dir_features,
+                "objs": inv_features,
+                "closest_onion": onion_features,
+                "closest_tomato": tomato_features,
+                "closest_dish": dish_features,
+                "closest_soup": soup_features,
+                "closest_soup_n_onions": soup_ingredient_features[0],
+                "closest_soup_n_tomatoes": soup_ingredient_features[1],
+                "closest_serving": serving_features,
+                "closest_empty_counter": empty_counter_features,
+                "closest_pot_0_exists": all_pot_features[0],
+                "closest_pot_0_is_empty": all_pot_features[1],
+                "closest_pot_0_is_full": all_pot_features[2],
+                "closest_pot_0_is_cooking": all_pot_features[3],
+                "closest_pot_0_is_ready": all_pot_features[4],
+                "closest_pot_0_num_onions": all_pot_features[5],
+                "closest_pot_0_num_tomatoes": all_pot_features[6],
+                "closest_pot_0_cook_time": all_pot_features[7],
+                "closest_pot_0": all_pot_features[8:10],
+                "closest_pot_1_exists": all_pot_features[10],
+                "closest_pot_1_is_empty": all_pot_features[11],
+                "closest_pot_1_is_full": all_pot_features[12],
+                "closest_pot_1_is_cooking": all_pot_features[13],
+                "closest_pot_1_is_ready": all_pot_features[14],
+                "closest_pot_1_num_onions": all_pot_features[15],
+                "closest_pot_1_num_tomatoes": all_pot_features[16],
+                "closest_pot_1_cook_time": all_pot_features[17],
+                "closest_pot_1": all_pot_features[18:20],
+                "wall_0": wall_features[0],
+                "wall_1": wall_features[1],
+                "wall_2": wall_features[2],
+                "wall_3": wall_features[3],
+            }
+            # c = {
+            #     "p1_orientation": array([1.0, 0.0, 0.0, 0.0]),
+            #     "p1_objs": array([0.0, 0.0, 0.0, 0.0]),
+            #     "p1_closest_onion": array([1, 0]),
+            #     "p1_closest_tomato": array([0, 0]),
+            #     "p1_closest_dish": array([-2, 2]),
+            #     "p1_closest_soup": array([0, 0]),
+            #     "p1_closest_soup_n_onions": array([0]),
+            #     "p1_closest_soup_n_tomatoes": array([0]),
+            #     "p1_closest_serving": array([0, 2]),
+            #     "p1_closest_empty_counter": array([0, 0]),
+            #     "p1_closest_pot_0_exists": array([1]),
+            #     "p1_closest_pot_0_is_empty": array([1]),
+            #     "p1_closest_pot_0_is_full": array([0]),
+            #     "p1_closest_pot_0_is_cooking": array([0]),
+            #     "p1_closest_pot_0_is_ready": array([0]),
+            #     "p1_closest_pot_0_num_onions": array([0]),
+            #     "p1_closest_pot_0_num_tomatoes": array([0]),
+            #     "p1_closest_pot_0_cook_time": array([0]),
+            #     "p1_closest_pot_0": array([-1, -1]),
+            #     "p1_closest_pot_1_exists": array([0]),
+            #     "p1_closest_pot_1_is_empty": array([0]),
+            #     "p1_closest_pot_1_is_full": array([0]),
+            #     "p1_closest_pot_1_is_cooking": array([0]),
+            #     "p1_closest_pot_1_is_ready": array([0]),
+            #     "p1_closest_pot_1_num_onions": array([0]),
+            #     "p1_closest_pot_1_num_tomatoes": array([0]),
+            #     "p1_closest_pot_1_cook_time": array([0]),
+            #     "p1_closest_pot_1": array([0, 0]),
+            #     "p1_wall_0": array([1]),
+            #     "p1_wall_1": array([0]),
+            #     "p1_wall_2": array([1]),
+            #     "p1_wall_3": array([0]),
+            # }
+
+            print("aua: ", d)
+
             return jnp.concatenate(
                 [
                     dir_features,
@@ -935,9 +1067,9 @@ class OvercookedV2(MultiAgentEnv):
                     tomato_features,
                     dish_features,
                     soup_features,
+                    soup_ingredient_features,
                     serving_features,
                     empty_counter_features,
-                    soup_ingredient_features,
                     all_pot_features,
                     wall_features,
                 ]
@@ -950,10 +1082,14 @@ class OvercookedV2(MultiAgentEnv):
 
             other_agent_selector = jnp.arange(self.num_agents - 1)
             other_agent_selector += other_agent_selector >= i
+            print("other_agent_selector: ", other_agent_selector)
 
             other_player_features = jnp.concatenate(
                 all_player_features[other_agent_selector], axis=-1
             )
+
+            print("agent_features: ", agent_features)
+            print("other_player_features: ", other_player_features)
 
             def _dist_to_other_players(other_agent):
                 return other_agent.pos.delta(agent.pos)
@@ -962,6 +1098,9 @@ class OvercookedV2(MultiAgentEnv):
             dist_to_other_players = dist_to_other_players[
                 other_agent_selector
             ].flatten()
+
+            print("dist_to_other_players: ", dist_to_other_players)
+            print("agent_pos: ", agent.pos.to_array())
 
             return jnp.concatenate(
                 [

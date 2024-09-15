@@ -134,6 +134,17 @@ class Direction(IntEnum):
     RIGHT = 2
     LEFT = 3
 
+    @staticmethod
+    def opposite(dir):
+        opposite_map = jnp.array(
+            [Direction.DOWN, Direction.UP, Direction.LEFT, Direction.RIGHT]
+        )
+        return opposite_map[dir]
+
+
+ALL_DIRECTIONS = jnp.array(
+    [Direction.UP, Direction.DOWN, Direction.RIGHT, Direction.LEFT]
+)
 
 DIR_TO_VEC = jnp.array(
     [
@@ -165,6 +176,14 @@ class Position:
         clipped_x = jnp.clip(new_pos.x, 0, width - 1)
         clipped_y = jnp.clip(new_pos.y, 0, height - 1)
         return Position(x=clipped_x, y=clipped_y)
+
+    def checked_move(self, direction, width, height):
+        new_pos = self.move(direction)
+        clipped_x = jnp.clip(new_pos.x, 0, width - 1)
+        clipped_y = jnp.clip(new_pos.y, 0, height - 1)
+        return Position(x=clipped_x, y=clipped_y), (clipped_x == new_pos.x) & (
+            clipped_y == new_pos.y
+        )
 
     def to_array(self):
         return jnp.stack([self.x, self.y], axis=-1)

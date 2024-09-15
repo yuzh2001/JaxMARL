@@ -238,7 +238,7 @@ class Layout:
         return [list(recipe) for recipe in unique_recipes]
 
     @staticmethod
-    def from_string(grid, possible_recipes=None):
+    def from_string(grid, possible_recipes=None, swap_agents=False):
         """Assumes `grid` is string representation of the layout, with 1 line per row, and the following symbols:
         W: wall
         A: agent
@@ -259,6 +259,8 @@ class Layout:
         If the layout does not have a recipe indicator, a fixed `recipe` must be provided.
 
         If `possible_recipes` is provided, it should be a list of lists of ingredient indices, 3 ingredients per recipe.
+
+        Swap agents will swap the positions of the agents in the layout. This is only used for compatibility with the old Overcooked-AI layouts.
         """
 
         rows = grid.split("\n")
@@ -326,6 +328,9 @@ class Layout:
                 "Layout does not include a recipe indicator, a fixed recipe must be provided"
             )
 
+        if swap_agents:
+            agent_positions = agent_positions[::-1]
+
         layout = Layout(
             agent_positions=agent_positions,
             static_objects=static_objects,
@@ -338,14 +343,16 @@ class Layout:
 
 overcooked_v2_layouts = {
     # Overcooked-AI layouts
-    "cramped_room": Layout.from_string(cramped_room, possible_recipes=[[0, 0, 0]]),
+    "cramped_room": Layout.from_string(
+        cramped_room, possible_recipes=[[0, 0, 0]], swap_agents=True
+    ),
     "asymm_advantages": Layout.from_string(
         asymm_advantages, possible_recipes=[[0, 0, 0]]
     ),
     "coord_ring": Layout.from_string(coord_ring, possible_recipes=[[0, 0, 0]]),
     "forced_coord": Layout.from_string(forced_coord, possible_recipes=[[0, 0, 0]]),
     "counter_circuit": Layout.from_string(
-        counter_circuit, possible_recipes=[[0, 0, 0]]
+        counter_circuit, possible_recipes=[[0, 0, 0]], swap_agents=True
     ),
     # Adapted layouts
     "cramped_room_v2": Layout.from_string(cramped_room_v2),
