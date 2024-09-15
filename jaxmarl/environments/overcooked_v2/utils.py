@@ -1,3 +1,4 @@
+from functools import partial
 import jax
 import jax.numpy as jnp
 from typing import List, Tuple
@@ -100,127 +101,162 @@ def get_closest_true_pos_no_directions(arr: jnp.ndarray, pos: Position) -> Posit
     return Position(x=min_x, y=min_y), is_valid
 
 
-def compute_min_moves(pos: Position, dir: Direction, mask: jnp.ndarray) -> jnp.ndarray:
-    assert mask.ndim == 2 and mask.dtype == jnp.bool_
-    H, W = mask.shape
+class OvercookedPathPlanner:
+    def __init__(self, move_area: jnp.ndarray):
+        self._precompute(move_area)
 
-    ys, xs = jnp.meshgrid(jnp.arange(H), jnp.arange(W), indexing="ij")
+    @partial(jax.jit, static_argnums=(0,))
+    def get_closest_target_pos(
+        self, targets: jnp.ndarray, pos: Position, dir: Direction
+    ) -> Tuple[Position, bool]:
+        pos_lookup_idx = self.position_to_idx[pos.y, pos.x]
 
-    def _obstacle_ahead(pos, dir):
-        new_pos, is_valid = pos.checked_move(dir, W, H)
-        obstacle_ahead = ~mask[new_pos.y, new_pos.x]
-        return ~is_valid | obstacle_ahead
+        def _compute_min_moves():
+            min_moves = self.precomputed_min_moves[pos_lookup_idx, dir]
+            return self._get_pos_from_min_moves_grid(min_moves, targets)
 
-    obstacle_ahead = jax.vmap(_obstacle_ahead, in_axes=(None, 0), out_axes=-1)(
-        Position(x=xs, y=ys), ALL_DIRECTIONS
-    )
-    obstacle_ahead &= mask[..., jnp.newaxis]
-
-    def cond_fun(loop_carry):
-        _, changed = loop_carry
-        return changed
-
-    def body_fun(loop_carry):
-        dist, _ = loop_carry
-        changed = False
-
-        min_across_last_dim = jnp.min(dist, axis=-1)
-
-        def _move_dir(dir):
-            moved_dist = jnp.full_like(min_across_last_dim, jnp.inf)
-            # print("moved_dist", moved_dist.shape)
-            # print("min_across_last_dim", min_across_last_dim.shape)
-            if dir == Direction.UP:
-                moved_dist = moved_dist.at[:-1, :].set(min_across_last_dim[1:, :])
-            elif dir == Direction.DOWN:
-                moved_dist = moved_dist.at[1:, :].set(min_across_last_dim[:-1, :])
-            elif dir == Direction.RIGHT:
-                moved_dist = moved_dist.at[:, 1:].set(min_across_last_dim[:, :-1])
-            elif dir == Direction.LEFT:
-                moved_dist = moved_dist.at[:, :-1].set(min_across_last_dim[:, 1:])
-            return jnp.where(mask, moved_dist, jnp.inf)
-
-        dist_up = _move_dir(Direction.UP)
-        dist_down = _move_dir(Direction.DOWN)
-        dist_right = _move_dir(Direction.RIGHT)
-        dist_left = _move_dir(Direction.LEFT)
-
-        dist_new = jnp.stack([dist_up, dist_down, dist_right, dist_left], axis=-1)
-
-        # jax.debug.print("dist_new {d}", d=dist_new)
-
-        blocked_new_dist = jnp.where(
-            obstacle_ahead, min_across_last_dim[..., jnp.newaxis], jnp.inf
+        is_target = targets[pos.y, pos.x]
+        is_allowed_pos = pos_lookup_idx != -1
+        return jax.lax.cond(
+            is_target | ~is_allowed_pos,
+            lambda: (pos, is_allowed_pos),
+            _compute_min_moves,
         )
 
-        # jax.debug.print("blocked_new_dist {d}", d=blocked_new_dist)
+    def _precompute(self, move_area: jnp.ndarray):
+        pos_idx = jnp.argwhere(move_area)
+        num_pos = pos_idx.shape[0]
+        positions = Position(y=pos_idx[:, 0], x=pos_idx[:, 1])
 
-        dist_new = jnp.minimum(dist_new, blocked_new_dist)
-        dist_new += 1
-        dist_updated = jnp.minimum(dist, dist_new)
+        self.precomputed_min_moves = jax.vmap(
+            jax.vmap(self._compute_min_moves, in_axes=(None, 0, None)),
+            in_axes=(0, None, None),
+        )(positions, ALL_DIRECTIONS, move_area)
 
-        # jax.debug.print("dist_updated {d}", d=dist_updated)
-        # jax.debug.print("dist {d}", d=dist)
-
-        # changed = ~jnp.allclose(dist_updated, dist)
-        changed = jnp.any(dist_updated != dist)
-
-        # jax.debug.print("changed {c}", c=changed)
-
-        return dist_updated, changed
-
-    initial_dist = jnp.full((H, W, 4), jnp.inf, dtype=jnp.float32)
-    initial_dist = initial_dist.at[pos.y, pos.x, dir].set(0)
-
-    dist_final, _ = jax.lax.while_loop(cond_fun, body_fun, (initial_dist, True))
-
-    def _compute_min_cost(pos, dir):
-        new_pos, is_valid = pos.checked_move(dir, W, H)
-        opposite_dir = Direction.opposite(dir)
-
-        return jnp.where(
-            is_valid,
-            dist_final[new_pos.y, new_pos.x, opposite_dir],
-            jnp.inf,
+        self.position_to_idx = (
+            jnp.full_like(move_area, -1, dtype=jnp.int32)
+            .at[positions.y, positions.x]
+            .set(jnp.arange(num_pos))
         )
 
-    min_cost_to_target = jax.vmap(_compute_min_cost, in_axes=(None, 0), out_axes=-1)(
-        Position(x=xs, y=ys), ALL_DIRECTIONS
-    )
-    min_cost_to_target = jnp.min(min_cost_to_target, axis=-1)
+        # print("Precomputation done")
+        # print("Number of positions:", num_pos)
+        # print("Shape of precomputed_min_moves:", self.precomputed_min_moves.shape)
+        # print("Shape of position_to_idx:", self.position_to_idx.shape)
 
-    # we only care about target cells
-    min_cost_to_target = jnp.where(mask, jnp.inf, min_cost_to_target)
+    @classmethod
+    @partial(jax.jit, static_argnums=(0,))
+    def get_closest_target_pos_static(
+        cls, move_area: jnp.ndarray, targets: jnp.ndarray, pos: Position, dir: Direction
+    ) -> Tuple[Position, bool]:
 
-    return min_cost_to_target
+        def _compute_min_moves(pos, dir):
+            min_moves = cls._compute_min_moves(pos, dir, move_area)
+            return cls._get_pos_from_min_moves_grid(min_moves, targets)
 
+        return jax.lax.cond(
+            targets[pos.y, pos.x],
+            lambda p, _d: (p, True),
+            _compute_min_moves,
+            pos,
+            dir,
+        )
 
-def get_closest_true_pos(targets, move_area, pos, dir):
-    # print("!!!!!!!!!!!!!!!!!")
-    # jax.debug.print("targets {t}", t=targets)
-    # jax.debug.print("reachable_area {r}", r=move_area)
-    # jax.debug.print("pos {p}", p=pos)
-    # jax.debug.print("dir {d}", d=dir)
-
-    def _compute_min_moves(pos, dir):
-        min_moves = compute_min_moves(pos, dir, move_area)
-        # jax.debug.print("min_moves {m}", m=min_moves)
-
+    @staticmethod
+    def _get_pos_from_min_moves_grid(
+        min_moves: jnp.ndarray, targets: jnp.ndarray
+    ) -> Tuple[Position, bool]:
         min_moves_targets = jnp.where(targets, min_moves, jnp.inf)
 
-        # jax.debug.print("min_moves_targets {m}", m=min_moves_targets)
-
         min_idx = jnp.argmin(min_moves_targets)
-        min_y, min_x = jnp.divmod(min_idx, move_area.shape[1])
+        min_y, min_x = jnp.divmod(min_idx, min_moves.shape[1])
 
         is_valid = jnp.any(jnp.isfinite(min_moves_targets))
 
         return Position(x=min_x, y=min_y), is_valid
 
-    return jax.lax.cond(
-        targets[pos.y, pos.x],
-        lambda p, d: (p, True),
-        _compute_min_moves,
-        pos,
-        dir,
-    )
+    @staticmethod
+    @jax.jit
+    def _compute_min_moves(
+        pos: Position, dir: Direction, mask: jnp.ndarray
+    ) -> jnp.ndarray:
+        assert mask.ndim == 2 and mask.dtype == jnp.bool_
+        H, W = mask.shape
+
+        ys, xs = jnp.meshgrid(jnp.arange(H), jnp.arange(W), indexing="ij")
+
+        def _obstacle_ahead(pos, dir):
+            new_pos, is_valid = pos.checked_move(dir, W, H)
+            obstacle_ahead = ~mask[new_pos.y, new_pos.x]
+            return ~is_valid | obstacle_ahead
+
+        obstacle_ahead = jax.vmap(_obstacle_ahead, in_axes=(None, 0), out_axes=-1)(
+            Position(x=xs, y=ys), ALL_DIRECTIONS
+        )
+        obstacle_ahead &= mask[..., jnp.newaxis]
+
+        def cond_fun(loop_carry):
+            _, changed = loop_carry
+            return changed
+
+        def body_fun(loop_carry):
+            dist, _ = loop_carry
+            changed = False
+
+            min_across_last_dim = jnp.min(dist, axis=-1)
+
+            def _move_dir(dir):
+                moved_dist = jnp.full_like(min_across_last_dim, jnp.inf)
+                if dir == Direction.UP:
+                    moved_dist = moved_dist.at[:-1, :].set(min_across_last_dim[1:, :])
+                elif dir == Direction.DOWN:
+                    moved_dist = moved_dist.at[1:, :].set(min_across_last_dim[:-1, :])
+                elif dir == Direction.RIGHT:
+                    moved_dist = moved_dist.at[:, 1:].set(min_across_last_dim[:, :-1])
+                elif dir == Direction.LEFT:
+                    moved_dist = moved_dist.at[:, :-1].set(min_across_last_dim[:, 1:])
+                return jnp.where(mask, moved_dist, jnp.inf)
+
+            dist_up = _move_dir(Direction.UP)
+            dist_down = _move_dir(Direction.DOWN)
+            dist_right = _move_dir(Direction.RIGHT)
+            dist_left = _move_dir(Direction.LEFT)
+
+            dist_new = jnp.stack([dist_up, dist_down, dist_right, dist_left], axis=-1)
+
+            blocked_new_dist = jnp.where(
+                obstacle_ahead, min_across_last_dim[..., jnp.newaxis], jnp.inf
+            )
+
+            dist_new = jnp.minimum(dist_new, blocked_new_dist)
+            dist_new += 1
+            dist_updated = jnp.minimum(dist, dist_new)
+
+            changed = jnp.any(dist_updated != dist)
+
+            return dist_updated, changed
+
+        initial_dist = jnp.full((H, W, 4), jnp.inf, dtype=jnp.float32)
+        initial_dist = initial_dist.at[pos.y, pos.x, dir].set(0)
+
+        dist_final, _ = jax.lax.while_loop(cond_fun, body_fun, (initial_dist, True))
+
+        def _compute_min_cost(pos, dir):
+            new_pos, is_valid = pos.checked_move(dir, W, H)
+            opposite_dir = Direction.opposite(dir)
+
+            return jnp.where(
+                is_valid,
+                dist_final[new_pos.y, new_pos.x, opposite_dir],
+                jnp.inf,
+            )
+
+        min_cost_to_target = jax.vmap(
+            _compute_min_cost, in_axes=(None, 0), out_axes=-1
+        )(Position(x=xs, y=ys), ALL_DIRECTIONS)
+        min_cost_to_target = jnp.min(min_cost_to_target, axis=-1)
+
+        # we only care about target cells
+        min_cost_to_target = jnp.where(mask, jnp.inf, min_cost_to_target)
+
+        return min_cost_to_target
