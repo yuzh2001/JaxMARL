@@ -84,6 +84,7 @@ class OvercookedV2(MultiAgentEnv):
         indicate_successful_delivery: bool = False,
         op_ingredient_permutations: List[int] = None,
         initial_state_buffer: Optional[State] = None,
+        force_path_planning: bool = False,
     ):
         """
         Initializes the OvercookedV2 environment.
@@ -101,6 +102,7 @@ class OvercookedV2(MultiAgentEnv):
             indicate_successful_delivery (bool): Whether to indicate a delivery was successful in the observation.
             op_ingredient_permutations (list): List of ingredient indices to permute in the observation (Fixed per agent in one episode).
             initial_state_buffer (State): Initial state buffer to be used to reset the environment. On each reset, a state from this buffer will be used.
+            force_path_planning (bool): Whether to force path planning in the environment. Used to access featurized obs manually.
         """
 
         if isinstance(layout, str):
@@ -159,9 +161,13 @@ class OvercookedV2(MultiAgentEnv):
 
         self.op_ingredient_permutations = op_ingredient_permutations
 
-        if observation_type == ObservationType.FEATURIZED or (
-            isinstance(observation_type, list)
-            and ObservationType.FEATURIZED in observation_type
+        if (
+            force_path_planning
+            or observation_type == ObservationType.FEATURIZED
+            or (
+                isinstance(observation_type, list)
+                and ObservationType.FEATURIZED in observation_type
+            )
         ):
             move_area = layout.static_objects == StaticObject.EMPTY
             self.path_planer = OvercookedPathPlanner(move_area)
@@ -532,7 +538,7 @@ class OvercookedV2(MultiAgentEnv):
 
         return _get_obs_shape_single(self.observation_type)
 
-    def get_obs(self, state: State) -> Dict[str, chex.Array]:
+    def get_obs(self, state: State) -> chex.Array:
         if not isinstance(self.observation_type, list):
             return self.get_obs_for_type(state, self.observation_type)
 
@@ -742,7 +748,7 @@ class OvercookedV2(MultiAgentEnv):
 
         return jax.vmap(_agent_obs)(jnp.arange(self.num_agents))
 
-    def get_obs_featurized(self, state: State) -> Dict[str, chex.Array]:
+    def get_obs_featurized(self, state: State) -> chex.Array:
         """
         Observation to match featurized observation from OvercookedAI, this method is used to featurize the state of the environment.
         Encode state with some manually designed features. Works for arbitrary number of players
