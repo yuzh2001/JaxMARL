@@ -1022,7 +1022,6 @@ class OvercookedV2(MultiAgentEnv):
                     agent.pos.to_array(),
                 ],
                 axis=-1,
-                dtype=jnp.int32,
             )
 
         return jax.vmap(_agent_obs)(state.agents, jnp.arange(self.num_agents))
