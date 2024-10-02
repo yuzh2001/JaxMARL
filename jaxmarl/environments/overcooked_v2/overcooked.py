@@ -795,7 +795,7 @@ class OvercookedV2(MultiAgentEnv):
 
         # TODO: maybe pass as argument
         num_pots = 2
-        reproduce_overcooked_ai = True
+        ignore_counters = False
 
         onion = DynamicObject.ingredient(0)
         recipe = 3 * onion
@@ -841,7 +841,7 @@ class OvercookedV2(MultiAgentEnv):
                     dynamic_mask = state.grid[:, :, 1] == dynamic_locator
                     if not_in_pot:
                         dynamic_mask &= state.grid[:, :, 0] != StaticObject.POT
-                    if reproduce_overcooked_ai:
+                    if ignore_counters:
                         dynamic_mask &= state.grid[:, :, 0] != StaticObject.WALL
                     mask |= dynamic_mask
                     mask = mask.at[pos.y, pos.x].set(inv == dynamic_locator)
@@ -878,13 +878,13 @@ class OvercookedV2(MultiAgentEnv):
             empty_counter_features = _closest_features(
                 static_locator=StaticObject.WALL, no_ingredients=True
             )
-            if reproduce_overcooked_ai:
+            if ignore_counters:
                 empty_counter_features = jnp.array([0, 0])
 
             # pi_closest_soup_n_{onions|tomatoes}
             # we assume that recipe is always 3 onions
             soup_on_grid_mask = state.grid[:, :, 1] == soup
-            if reproduce_overcooked_ai:
+            if ignore_counters:
                 soup_on_grid_mask &= state.grid[:, :, 0] != StaticObject.WALL
             soup_onions = jax.lax.select(
                 jnp.any(soup_on_grid_mask) | (inv == soup), 3, 0
