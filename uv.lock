@@ -754,6 +754,19 @@ wheels = [
 ]
 
 [[package]]
+name = "imageio"
+version = "2.36.0"
+source = { registry = "https://pypi.cstcloud.cn/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "pillow" },
+]
+sdist = { url = "https://pypi.cstcloud.cn/packages/4f/34/a714fd354f5f7fe650477072d4da21446849b20c02045dcf7ac827495121/imageio-2.36.0.tar.gz", hash = "sha256:1c8f294db862c256e9562354d65aa54725b8dafed7f10f02bb3ec20ec1678850" }
+wheels = [
+    { url = "https://pypi.cstcloud.cn/packages/4e/e7/26045404a30c8a200e960fb54fbaf4b73d12e58cd28e03b306b084253f4f/imageio-2.36.0-py3-none-any.whl", hash = "sha256:471f1eda55618ee44a3c9960911c35e647d9284c68f077e868df633398f137f0" },
+]
+
+[[package]]
 name = "importlib-resources"
 version = "6.4.5"
 source = { registry = "https://pypi.cstcloud.cn/simple" }
@@ -845,6 +858,35 @@ with-cuda = [
 ]
 
 [[package]]
+name = "jax2d"
+version = "1.0.0"
+source = { registry = "https://pypi.cstcloud.cn/simple" }
+dependencies = [
+    { name = "flax" },
+    { name = "jax" },
+]
+sdist = { url = "https://pypi.cstcloud.cn/packages/f0/14/98434207bab3fdcf953de39ba659a4ac5bea3a39e628c552f35150e5b034/jax2d-1.0.0.tar.gz", hash = "sha256:e808015b45d435be5d24e82943d827dd3c0bfa1944dd0a3b343a70c86a17d8c4" }
+wheels = [
+    { url = "https://pypi.cstcloud.cn/packages/ab/e7/ddd6d305bff91886cd8af36bb9823b6eb44bfa09d0befbcd993643a9cacb/jax2d-1.0.0-py3-none-any.whl", hash = "sha256:87486d356933d01225bcc443ca110dd2ab107d2871c322554822116f83ed310c" },
+]
+
+[[package]]
+name = "jaxgl"
+version = "1.0.1"
+source = { registry = "https://pypi.cstcloud.cn/simple" }
+dependencies = [
+    { name = "flax" },
+    { name = "imageio" },
+    { name = "jax" },
+    { name = "matplotlib" },
+    { name = "numpy" },
+]
+sdist = { url = "https://pypi.cstcloud.cn/packages/50/4d/bfa0f8bf4fd3e85312a77cacba2a507d22feb211e9151bc4ea5da14e6050/jaxgl-1.0.1.tar.gz", hash = "sha256:051a1975f2e1932c64b98e9770473ed5c102387f69fa2edded214439de8688e0" }
+wheels = [
+    { url = "https://pypi.cstcloud.cn/packages/f3/e1/3ac61628a0cc048a83a088a67603486d7fbfd68ee0e8f8a22b41a0ddecf6/jaxgl-1.0.1-py3-none-any.whl", hash = "sha256:b9940ef8a578e4571a4a8ffcdb1e1a2b686df7f1cd46cb6e680437edbffe947e" },
+]
+
+[[package]]
 name = "jaxlib"
 version = "0.4.34"
 source = { registry = "https://pypi.cstcloud.cn/simple" }
@@ -890,6 +932,8 @@ dependencies = [
     { name = "gymnax" },
     { name = "hydra-core" },
     { name = "jax", extra = ["cuda12"] },
+    { name = "jax2d" },
+    { name = "jaxgl" },
     { name = "jaxlib" },
     { name = "matplotlib" },
     { name = "mujoco" },
@@ -932,6 +976,8 @@ requires-dist = [
     { name = "hydra-core", specifier = ">=1.3.2" },
     { name = "hydra-core", marker = "extra == 'algs'", specifier = ">=1.3.2" },
     { name = "jax", extras = ["cuda-12", "cuda12"] },
+    { name = "jax2d", specifier = ">=1.0.0" },
+    { name = "jaxgl", specifier = ">=1.0.1" },
     { name = "jaxlib" },
     { name = "matplotlib" },
     { name = "mujoco", specifier = "==3.1.3" },
