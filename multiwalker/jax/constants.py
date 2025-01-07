@@ -3,7 +3,7 @@ MAX_AGENTS = 40
 FPS = 50
 SCALE = 30.0  # affects how fast-paced the game is, forces should be adjusted as well
 
-MOTORS_TORQUE = 80
+MOTORS_TORQUE = 80 / 10
 SPEED_HIP = 4
 SPEED_KNEE = 6
 LIDAR_RANGE = 160 / SCALE
@@ -26,7 +26,7 @@ TERRAIN_STEP = 14 / SCALE
 TERRAIN_LENGTH = 200  # in steps
 TERRAIN_HEIGHT = VIEWPORT_H / SCALE / 4
 TERRAIN_GRASS = 10  # low long are grass spots, in steps
-TERRAIN_STARTPAD = 20  # in steps
+TERRAIN_STARTPAD = 10  # in steps
 FRICTION = 2.5
 
 WALKER_SEPERATION = 10  # in steps

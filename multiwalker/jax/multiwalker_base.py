@@ -28,7 +28,6 @@ from jax2d.sim_state import SimParams
 from jaxgl.renderer import clear_screen, make_renderer
 from jaxgl.shaders import (
     add_mask_to_shader,
-    fragment_shader_circle,
     make_fragment_shader_convex_dynamic_ngon_with_edges,
 )
 
@@ -36,10 +35,28 @@ from jaxgl.shaders import (
 #   so it doesn't need a windowing system.
 os.environ["SDL_VIDEODRIVER"] = "dummy"
 MW_COLORS = {
-    "hull": [(127, 51, 229), (76, 76, 127)],
-    "leg:L": [(178, 101, 152), (127, 76, 101)],
-    "leg:R": [(153, 76, 127), (102, 51, 76)],
+    "hull": [jnp.array([127, 51, 229]), jnp.array([76, 76, 127])],
+    "leg:L": [jnp.array([178, 101, 152]), jnp.array([127, 76, 101])],
+    "leg:R": [jnp.array([153, 76, 127]), jnp.array([102, 51, 76])],
 }
+
+color_table = jnp.ones((12, 3))
+
+
+@struct.dataclass
+class MW_StaticSimParams:
+    # State size
+    num_polygons: int = 12
+    num_circles: int = 12
+    num_joints: int = 12
+    num_thrusters: int = 12
+    max_polygon_vertices: int = 4
+
+    # Compute amount
+    num_solver_iterations: int = 10
+    solver_batch_size: int = 16
+    do_warm_starting: bool = True
+    num_static_fixated_polys: int = 4
 
 
 class BipedalWalker:
@@ -73,6 +90,8 @@ class BipedalWalker:
         return [seed]
 
     def _reset(self):
+        global color_table
+        color_table = jnp.ones((self.static_sim_params.num_polygons, 3))
         # self._destroy()
         init_x = self.init_x
         init_y = self.init_y
@@ -90,6 +109,7 @@ class BipedalWalker:
             restitution=0.0,
         )
         self.hull_index = hull_index
+        color_table = color_table.at[hull_index].set(MW_COLORS["hull"][0])
 
         # make a force to the hull
         # _uniform_res = self.uniform_fn(-INITIAL_RANDOM, INITIAL_RANDOM)
@@ -157,7 +177,15 @@ class BipedalWalker:
                 min_rotation=-1.6,
                 max_rotation=-0.1,
             )
+            self.leg_indexes.append(leg_lower_index)
             self.joint_indexes.append(leg_lower_joint_index)
+
+            if i == -1:
+                color_table = color_table.at[leg_index].set(MW_COLORS["leg:L"][0])
+                color_table = color_table.at[leg_lower_index].set(MW_COLORS["leg:L"][0])
+            else:
+                color_table = color_table.at[leg_index].set(MW_COLORS["leg:R"][0])
+                color_table = color_table.at[leg_lower_index].set(MW_COLORS["leg:R"][0])
 
         # class LidarCallback(Box2D.b2.rayCastCallback):
         #     def ReportFixture(self, fixture, point, normal, fraction):
@@ -174,7 +202,7 @@ class BipedalWalker:
 
 def make_render_pixels(static_sim_params, screen_dim):
     ppud = 10
-    patch_size = 512
+    patch_size = 600
     screen_padding = patch_size
     full_screen_size = (
         screen_dim[0] + 2 * screen_padding,
@@ -184,12 +212,7 @@ def make_render_pixels(static_sim_params, screen_dim):
     def _world_space_to_pixel_space(x):
         return x * ppud + screen_padding
 
-    cleared_screen = clear_screen(full_screen_size, jnp.zeros(3))
-
-    circle_shader = add_mask_to_shader(fragment_shader_circle)
-    circle_renderer = make_renderer(
-        full_screen_size, circle_shader, (patch_size, patch_size), batched=True
-    )
+    cleared_screen = clear_screen(full_screen_size, jnp.ones(3) * 200.0)
 
     polygon_shader = add_mask_to_shader(
         make_fragment_shader_convex_dynamic_ngon_with_edges(4)
@@ -203,6 +226,7 @@ def make_render_pixels(static_sim_params, screen_dim):
         pixels = cleared_screen
 
         # Rectangles
+        print(state.polygon.position)
         rect_positions_pixel_space = _world_space_to_pixel_space(state.polygon.position)
         rectangle_rmats = jax.vmap(rmat)(state.polygon.rotation)
         rectangle_rmats = jnp.repeat(
@@ -219,7 +243,12 @@ def make_render_pixels(static_sim_params, screen_dim):
         )
         rect_patch_positions = jnp.maximum(rect_patch_positions, 0)
 
-        rect_colours = jnp.ones((static_sim_params.num_polygons, 3)) * 128.0
+        rect_colours = jnp.array(
+            [color_table[idx] for idx in range(static_sim_params.num_polygons)]
+        )
+        print(rect_colours)
+        # rect_colours = jnp.ones((static_sim_params.num_polygons, 3)) * 128.0
+        # print(rect_colours)
         rect_uniforms = (
             rectangle_vertices_pixel_space,
             rect_colours,
@@ -230,27 +259,6 @@ def make_render_pixels(static_sim_params, screen_dim):
 
         pixels = quad_renderer(pixels, rect_patch_positions, rect_uniforms)
 
-        # Circles
-        circle_positions_pixel_space = _world_space_to_pixel_space(
-            state.circle.position
-        )
-        circle_radii_pixel_space = state.circle.radius * ppud
-        circle_patch_positions = (
-            circle_positions_pixel_space - (patch_size / 2)
-        ).astype(jnp.int32)
-        circle_patch_positions = jnp.maximum(circle_patch_positions, 0)
-
-        circle_colours = jnp.ones((static_sim_params.num_circles, 3)) * 255.0
-
-        circle_uniforms = (
-            circle_positions_pixel_space,
-            circle_radii_pixel_space,
-            circle_colours,
-            state.circle.active,
-        )
-
-        pixels = circle_renderer(pixels, circle_patch_positions, circle_uniforms)
-
         # Crop out the sides
         return jnp.rot90(
             pixels[screen_padding:-screen_padding, screen_padding:-screen_padding]
@@ -259,24 +267,8 @@ def make_render_pixels(static_sim_params, screen_dim):
     return render_pixels
 
 
-@struct.dataclass
-class MW_StaticSimParams:
-    # State size
-    num_polygons: int = 12
-    num_circles: int = 12
-    num_joints: int = 12
-    num_thrusters: int = 12
-    max_polygon_vertices: int = 4
-
-    # Compute amount
-    num_solver_iterations: int = 10
-    solver_batch_size: int = 16
-    do_warm_starting: bool = True
-    num_static_fixated_polys: int = 4
-
-
 def main():
-    screen_dim = (400, 600)
+    screen_dim = (600, 400)
 
     # Create engine with default parameters
     static_sim_params = MW_StaticSimParams()
@@ -300,10 +292,10 @@ def main():
 
     # gif！
     frames = []
-    max_step = 20
+    max_step = 200
     step = 0
     while True:
-        actions = -jnp.zeros(24)
+        actions = -jnp.ones(24)
         sim_state_scene, _ = step_fn(sim_state_scene, sim_params, actions)
 
         # Render
