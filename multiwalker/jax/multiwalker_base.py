@@ -202,7 +202,7 @@ class BipedalWalker:
 
 def make_render_pixels(static_sim_params, screen_dim):
     ppud = 10
-    patch_size = 600
+    patch_size = 512
     screen_padding = patch_size
     full_screen_size = (
         screen_dim[0] + 2 * screen_padding,
@@ -226,7 +226,6 @@ def make_render_pixels(static_sim_params, screen_dim):
         pixels = cleared_screen
 
         # Rectangles
-        print(state.polygon.position)
         rect_positions_pixel_space = _world_space_to_pixel_space(state.polygon.position)
         rectangle_rmats = jax.vmap(rmat)(state.polygon.rotation)
         rectangle_rmats = jnp.repeat(
@@ -246,9 +245,6 @@ def make_render_pixels(static_sim_params, screen_dim):
         rect_colours = jnp.array(
             [color_table[idx] for idx in range(static_sim_params.num_polygons)]
         )
-        print(rect_colours)
-        # rect_colours = jnp.ones((static_sim_params.num_polygons, 3)) * 128.0
-        # print(rect_colours)
         rect_uniforms = (
             rectangle_vertices_pixel_space,
             rect_colours,
@@ -276,7 +272,9 @@ def main():
     engine = PhysicsEngine(static_sim_params)
 
     # Create scene
-    sim_state_scene = create_empty_sim(static_sim_params, floor_offset=0.0)
+    sim_state_scene = create_empty_sim(
+        static_sim_params, add_floor=True, add_walls_and_ceiling=False, scene_size=10
+    )
 
     walker = BipedalWalker(sim_state_scene, static_sim_params)
     sim_state_scene = walker._reset()
@@ -295,7 +293,9 @@ def main():
     max_step = 200
     step = 0
     while True:
-        actions = -jnp.ones(24)
+        actions = -jnp.ones(
+            static_sim_params.num_joints + static_sim_params.num_thrusters
+        )
         sim_state_scene, _ = step_fn(sim_state_scene, sim_params, actions)
 
         # Render
