@@ -3,7 +3,7 @@ MAX_AGENTS = 40
 FPS = 50
 SCALE = 30.0  # affects how fast-paced the game is, forces should be adjusted as well
 
-MOTORS_TORQUE = 80 / 10
+MOTORS_TORQUE = 20 / 10
 SPEED_HIP = 4
 SPEED_KNEE = 6
 LIDAR_RANGE = 160 / SCALE

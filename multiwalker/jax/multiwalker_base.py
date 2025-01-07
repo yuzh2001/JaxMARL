@@ -10,7 +10,6 @@ from constants import (
     LEG_DOWN,
     LEG_H,
     LEG_W,
-    MOTORS_TORQUE,
     SCALE,
     TERRAIN_HEIGHT,
     TERRAIN_STARTPAD,
@@ -24,7 +23,7 @@ from jax2d.scene import (
     add_rectangle_to_scene,
     add_revolute_joint_to_scene,
 )
-from jax2d.sim_state import SimParams
+from jax2d.sim_state import SimParams, SimState, StaticSimParams
 from jaxgl.renderer import clear_screen, make_renderer
 from jaxgl.shaders import (
     add_mask_to_shader,
@@ -44,7 +43,7 @@ color_table = jnp.ones((12, 3))
 
 
 @struct.dataclass
-class MW_StaticSimParams:
+class MW_StaticSimParams(StaticSimParams):
     # State size
     num_polygons: int = 12
     num_circles: int = 12
@@ -55,17 +54,17 @@ class MW_StaticSimParams:
     # Compute amount
     num_solver_iterations: int = 10
     solver_batch_size: int = 16
-    do_warm_starting: bool = True
+    do_warm_starting: bool = False
     num_static_fixated_polys: int = 4
 
 
 class BipedalWalker:
     def __init__(
         self,
-        scene,
-        static_sim_params,
+        scene: SimState,
+        static_sim_params: StaticSimParams,
         init_x=TERRAIN_STEP * TERRAIN_STARTPAD / 2,
-        init_y=TERRAIN_HEIGHT + 2 * LEG_H,
+        init_y=TERRAIN_HEIGHT / 2 + 2 * LEG_H,
         n_walkers=3,
         seed=None,
     ):
@@ -91,7 +90,6 @@ class BipedalWalker:
 
     def _reset(self):
         global color_table
-        color_table = jnp.ones((self.static_sim_params.num_polygons, 3))
         # self._destroy()
         init_x = self.init_x
         init_y = self.init_y
@@ -104,23 +102,12 @@ class BipedalWalker:
             position=jnp.array([init_x, init_y]),
             vertices=hull_vertices,
             n_vertices=len(HULL_POLY),
-            density=5.0,
-            friction=0.1,
+            density=1.0,
+            friction=1,
             restitution=0.0,
         )
         self.hull_index = hull_index
         color_table = color_table.at[hull_index].set(MW_COLORS["hull"][0])
-
-        # make a force to the hull
-        # _uniform_res = self.uniform_fn(-INITIAL_RANDOM, INITIAL_RANDOM)
-        # self.scene, hull_thruster_index = add_thruster_to_scene(
-        #     self.scene,
-        #     self.hull_index,
-        #     jnp.array([0.0, 0.0]),
-        #     0,
-        #     power=_uniform_res,
-        # )
-        # self.hull_thruster_index = hull_thruster_index
 
         # add the legs
         self.leg_indexes = []
@@ -133,7 +120,7 @@ class BipedalWalker:
                 dimensions=jnp.array([LEG_W, LEG_H]),
                 density=1.0,
                 restitution=0.0,
-                rotation=i * 0.05,
+                rotation=i * 0.5,
             )
             self.scene, leg_hull_joint_index = add_revolute_joint_to_scene(
                 self.scene,
@@ -143,8 +130,8 @@ class BipedalWalker:
                 a_relative_pos=jnp.array([0.0, LEG_DOWN]),
                 b_relative_pos=jnp.array([0.0, LEG_H / 2]),
                 motor_on=True,
-                motor_speed=i,
-                motor_power=MOTORS_TORQUE,
+                # motor_speed=1,
+                # motor_power=MOTORS_TORQUE,
                 has_joint_limits=True,
                 min_rotation=-0.8,
                 max_rotation=1.1,
@@ -160,7 +147,7 @@ class BipedalWalker:
                 dimensions=jnp.array([0.8 * LEG_W, LEG_H]),
                 density=1.0,
                 restitution=0.0,
-                rotation=i * 0.05,
+                rotation=i * 0.5,
             )
 
             self.scene, leg_lower_joint_index = add_revolute_joint_to_scene(
@@ -171,8 +158,8 @@ class BipedalWalker:
                 a_relative_pos=jnp.array([0.0, -LEG_H / 2]),
                 b_relative_pos=jnp.array([0.0, LEG_H / 2]),
                 motor_on=True,
-                motor_speed=1,
-                motor_power=MOTORS_TORQUE,
+                # motor_speed=1,
+                # motor_power=MOTORS_TORQUE,
                 has_joint_limits=True,
                 min_rotation=-1.6,
                 max_rotation=-0.1,
@@ -201,8 +188,8 @@ class BipedalWalker:
 
 
 def make_render_pixels(static_sim_params, screen_dim):
-    ppud = 10
-    patch_size = 512
+    ppud = 40
+    patch_size = 800
     screen_padding = patch_size
     full_screen_size = (
         screen_dim[0] + 2 * screen_padding,
@@ -263,6 +250,39 @@ def make_render_pixels(static_sim_params, screen_dim):
     return render_pixels
 
 
+class MultiWalkerWorld:
+    def __init__(self, sim_params, static_sim_params, scene=None):
+        self.static_sim_params = static_sim_params
+        self.sim_params = sim_params
+        self.scene = scene
+
+    def reset(self):
+        global color_table
+        color_table = jnp.ones((self.static_sim_params.num_polygons, 3))
+        self.scene = create_empty_sim(
+            self.static_sim_params,
+            add_floor=False,
+            add_walls_and_ceiling=False,
+            scene_size=10,
+        )
+
+        self.walker = BipedalWalker(self.scene, self.static_sim_params)
+        self.scene = self.walker._reset()
+        self.walker1 = BipedalWalker(self.scene, self.static_sim_params, init_x=5)
+        self.scene = self.walker1._reset()
+        self.scene, _ = add_rectangle_to_scene(
+            self.scene,
+            self.static_sim_params,
+            position=jnp.array([0, 0]),
+            dimensions=jnp.array([100, 2]),
+            density=1.0,
+            restitution=0.0,
+            friction=1.0,
+            fixated=True,
+        )
+        return self.scene
+
+
 def main():
     screen_dim = (600, 400)
 
@@ -271,13 +291,8 @@ def main():
     sim_params = SimParams()
     engine = PhysicsEngine(static_sim_params)
 
-    # Create scene
-    sim_state_scene = create_empty_sim(
-        static_sim_params, add_floor=True, add_walls_and_ceiling=False, scene_size=10
-    )
-
-    walker = BipedalWalker(sim_state_scene, static_sim_params)
-    sim_state_scene = walker._reset()
+    world = MultiWalkerWorld(sim_params, static_sim_params)
+    world.reset()
 
     # Renderer
     renderer = make_render_pixels(static_sim_params, screen_dim)
@@ -293,13 +308,13 @@ def main():
     max_step = 200
     step = 0
     while True:
-        actions = -jnp.ones(
+        actions = -jnp.zeros(
             static_sim_params.num_joints + static_sim_params.num_thrusters
         )
-        sim_state_scene, _ = step_fn(sim_state_scene, sim_params, actions)
+        world.scene, _ = step_fn(world.scene, sim_params, actions)
 
         # Render
-        pixels = renderer(sim_state_scene)
+        pixels = renderer(world.scene)
         frames.append(pixels.astype(np.uint8))
         # Update screen
         surface = pygame.surfarray.make_surface(np.array(pixels)[:, ::-1])
