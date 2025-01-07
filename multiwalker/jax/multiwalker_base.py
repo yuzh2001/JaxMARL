@@ -39,8 +39,6 @@ MW_COLORS = {
     "leg:R": [jnp.array([153, 76, 127]), jnp.array([102, 51, 76])],
 }
 
-color_table = jnp.ones((12, 3))
-
 
 @struct.dataclass
 class MW_StaticSimParams(StaticSimParams):
@@ -58,9 +56,40 @@ class MW_StaticSimParams(StaticSimParams):
     num_static_fixated_polys: int = 4
 
 
+@struct.dataclass
+class MW_SimParams(SimParams):
+    # Timestep size
+    dt: float = 1 / 60
+
+    # Collision and joint coefficients
+    slop: float = 0.01
+    baumgarte_coefficient_joints_v: float = 2.0
+    baumgarte_coefficient_joints_p: float = 0.7
+    baumgarte_coefficient_fjoint_av: float = 2.0
+    baumgarte_coefficient_rjoint_limit_av: float = 5.0
+    baumgarte_coefficient_collision: float = 0.2
+    joint_stiffness: float = 0.6
+
+    # State clipping
+    clip_position: float = 15
+    clip_velocity: float = 100
+    clip_angular_velocity: float = 50
+
+    # Motors and thrusters
+    base_motor_speed: float = 6.0  # rad/s
+    base_motor_power: float = 900.0
+    base_thruster_power: float = 10.0
+    motor_decay_coefficient: float = 0.1
+    motor_joint_limit: float = 0.1  # rad
+
+    # Other defaults
+    base_friction: float = 0.4
+
+
 class BipedalWalker:
     def __init__(
         self,
+        world,
         scene: SimState,
         static_sim_params: StaticSimParams,
         init_x=TERRAIN_STEP * TERRAIN_STARTPAD / 2,
@@ -68,12 +97,12 @@ class BipedalWalker:
         n_walkers=3,
         seed=None,
     ):
+        self.world = world
         self.scene = scene
         self.static_sim_params = static_sim_params
         self._n_walkers = n_walkers
         self.init_x = init_x
         self.init_y = init_y
-        self.walker_id = -int(self.init_x)
         self._seed(seed)
 
         # all parts
@@ -89,7 +118,6 @@ class BipedalWalker:
         return [seed]
 
     def _reset(self):
-        global color_table
         # self._destroy()
         init_x = self.init_x
         init_y = self.init_y
@@ -107,7 +135,7 @@ class BipedalWalker:
             restitution=0.0,
         )
         self.hull_index = hull_index
-        color_table = color_table.at[hull_index].set(MW_COLORS["hull"][0])
+        self.world.change_color(hull_index, MW_COLORS["hull"][0])
 
         # add the legs
         self.leg_indexes = []
@@ -168,11 +196,11 @@ class BipedalWalker:
             self.joint_indexes.append(leg_lower_joint_index)
 
             if i == -1:
-                color_table = color_table.at[leg_index].set(MW_COLORS["leg:L"][0])
-                color_table = color_table.at[leg_lower_index].set(MW_COLORS["leg:L"][0])
+                self.world.change_color(leg_index, MW_COLORS["leg:L"][0])
+                self.world.change_color(leg_lower_index, MW_COLORS["leg:L"][0])
             else:
-                color_table = color_table.at[leg_index].set(MW_COLORS["leg:R"][0])
-                color_table = color_table.at[leg_lower_index].set(MW_COLORS["leg:R"][0])
+                self.world.change_color(leg_index, MW_COLORS["leg:R"][0])
+                self.world.change_color(leg_lower_index, MW_COLORS["leg:R"][0])
 
         # class LidarCallback(Box2D.b2.rayCastCallback):
         #     def ReportFixture(self, fixture, point, normal, fraction):
@@ -185,6 +213,51 @@ class BipedalWalker:
         # self.lidar = [LidarCallback() for _ in range(10)]
 
         return self.scene
+
+
+class MultiWalkerWorld:
+    def __init__(
+        self,
+        sim_params: MW_SimParams,
+        static_sim_params: MW_StaticSimParams,
+        scene: SimState = None,
+    ):
+        self.static_sim_params = static_sim_params
+        self.sim_params = sim_params
+        self.scene = scene
+        self.color_table = jnp.ones((self.static_sim_params.num_polygons, 3))
+
+    def reset(self):
+        self.color_table = jnp.ones((self.static_sim_params.num_polygons, 3))
+        self.scene = create_empty_sim(
+            self.static_sim_params,
+            add_floor=False,
+            add_walls_and_ceiling=False,
+            scene_size=10,
+        )
+
+        self.walker = BipedalWalker(
+            self,
+            self.scene,
+            self.static_sim_params,
+        )
+        self.scene = self.walker._reset()
+        self.walker1 = BipedalWalker(self, self.scene, self.static_sim_params, init_x=5)
+        self.scene = self.walker1._reset()
+        self.scene, _ = add_rectangle_to_scene(
+            self.scene,
+            self.static_sim_params,
+            position=jnp.array([0, 0]),
+            dimensions=jnp.array([100, 2]),
+            density=1.0,
+            restitution=0.0,
+            friction=1.0,
+            fixated=True,
+        )
+        return self.scene
+
+    def change_color(self, index, color):
+        self.color_table = self.color_table.at[index].set(color)
 
 
 def make_render_pixels(static_sim_params, screen_dim):
@@ -209,7 +282,7 @@ def make_render_pixels(static_sim_params, screen_dim):
     )
 
     @jax.jit
-    def render_pixels(state):
+    def render_pixels(state, color_table):
         pixels = cleared_screen
 
         # Rectangles
@@ -250,37 +323,8 @@ def make_render_pixels(static_sim_params, screen_dim):
     return render_pixels
 
 
-class MultiWalkerWorld:
-    def __init__(self, sim_params, static_sim_params, scene=None):
-        self.static_sim_params = static_sim_params
-        self.sim_params = sim_params
-        self.scene = scene
-
-    def reset(self):
-        global color_table
-        color_table = jnp.ones((self.static_sim_params.num_polygons, 3))
-        self.scene = create_empty_sim(
-            self.static_sim_params,
-            add_floor=False,
-            add_walls_and_ceiling=False,
-            scene_size=10,
-        )
-
-        self.walker = BipedalWalker(self.scene, self.static_sim_params)
-        self.scene = self.walker._reset()
-        self.walker1 = BipedalWalker(self.scene, self.static_sim_params, init_x=5)
-        self.scene = self.walker1._reset()
-        self.scene, _ = add_rectangle_to_scene(
-            self.scene,
-            self.static_sim_params,
-            position=jnp.array([0, 0]),
-            dimensions=jnp.array([100, 2]),
-            density=1.0,
-            restitution=0.0,
-            friction=1.0,
-            fixated=True,
-        )
-        return self.scene
+def render_bridge(world: MultiWalkerWorld, renderer):
+    return renderer(world.scene, world.color_table)
 
 
 def main():
@@ -288,7 +332,7 @@ def main():
 
     # Create engine with default parameters
     static_sim_params = MW_StaticSimParams()
-    sim_params = SimParams()
+    sim_params = MW_SimParams()
     engine = PhysicsEngine(static_sim_params)
 
     world = MultiWalkerWorld(sim_params, static_sim_params)
@@ -314,7 +358,7 @@ def main():
         world.scene, _ = step_fn(world.scene, sim_params, actions)
 
         # Render
-        pixels = renderer(world.scene)
+        pixels = render_bridge(world, renderer)
         frames.append(pixels.astype(np.uint8))
         # Update screen
         surface = pygame.surfarray.make_surface(np.array(pixels)[:, ::-1])
