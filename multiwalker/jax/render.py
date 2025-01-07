@@ -9,9 +9,10 @@ from jaxgl.shaders import (
 
 
 def make_render_pixels(static_sim_params, screen_dim):
-    ppud = 40
-    patch_size = 800
-    screen_padding = patch_size
+    ppud = 12
+    patch_size_x = 2000
+    patch_size_y = 400
+    screen_padding = 400
     full_screen_size = (
         screen_dim[0] + 2 * screen_padding,
         screen_dim[1] + 2 * screen_padding,
@@ -23,7 +24,7 @@ def make_render_pixels(static_sim_params, screen_dim):
         make_fragment_shader_convex_dynamic_ngon_with_edges(4)
     )
     quad_renderer = make_renderer(
-        full_screen_size, polygon_shader, (patch_size, patch_size), batched=True
+        full_screen_size, polygon_shader, (patch_size_x, patch_size_y), batched=True
     )
 
     @jax.jit
@@ -33,7 +34,7 @@ def make_render_pixels(static_sim_params, screen_dim):
         def _world_space_to_pixel_spacestep(x):
             return jnp.array(
                 [
-                    [t[0] * ppud + screen_padding - step, t[1] * ppud + screen_padding]
+                    [t[0] * ppud + screen_padding, t[1] * ppud + screen_padding]
                     for t in x
                 ]
             )
@@ -42,23 +43,30 @@ def make_render_pixels(static_sim_params, screen_dim):
             return x * ppud + screen_padding
 
         # Rectangles
-        rect_positions_pixel_space = _world_space_to_pixel_spacestep(
-            state.polygon.position
-        )
+
         rectangle_rmats = jax.vmap(rmat)(state.polygon.rotation)
         rectangle_rmats = jnp.repeat(
             rectangle_rmats[:, None, :, :],
             repeats=static_sim_params.max_polygon_vertices,
             axis=1,
         )
+
+        # vertices to pixel space
         rectangle_vertices_pixel_space = _world_space_to_pixel_space(
             state.polygon.position[:, None, :]
             + jax.vmap(jax.vmap(jnp.matmul))(rectangle_rmats, state.polygon.vertices)
         )
-        rect_patch_positions = (rect_positions_pixel_space - (patch_size / 2)).astype(
-            jnp.int32
+
+        # calculate patch positions
+        jax.debug.print("state.polygon.position: {x}", x=state.polygon.position)
+        rect_positions_pixel_space = _world_space_to_pixel_spacestep(
+            state.polygon.position
         )
+        jax.debug.print("rect_positions_pixel_space: {x}", x=rect_positions_pixel_space)
+        rect_patch_positions = (rect_positions_pixel_space - 100 / 2).astype(jnp.int32)
+        jax.debug.print("rect_patch_positions: {x}", x=rect_patch_positions)
         rect_patch_positions = jnp.maximum(rect_patch_positions, 0)
+        jax.debug.print("rect_patch_positions max: {x}", x=rect_patch_positions)
 
         rect_colours = jnp.array(
             [color_table[idx] for idx in range(static_sim_params.num_polygons)]

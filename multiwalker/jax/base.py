@@ -60,7 +60,7 @@ class MW_SimParams(SimParams):
     joint_stiffness: float = 0.6
 
     # State clipping
-    clip_position: float = 15
+    clip_position: float = 200
     clip_velocity: float = 100
     clip_angular_velocity: float = 50
 
@@ -226,7 +226,6 @@ class MultiWalkerWorld:
             self.static_sim_params,
             add_floor=False,
             add_walls_and_ceiling=False,
-            scene_size=10,
         )
 
         ## setup walkers
@@ -234,7 +233,7 @@ class MultiWalkerWorld:
             walker = BipedalWalker(
                 self,
                 self.static_sim_params,
-                init_x=(3 * i + 3),
+                init_x=(3 * i + 2),
             )
             self.scene = walker.setup(self.scene)
             self.walkers.append(walker)
@@ -244,7 +243,7 @@ class MultiWalkerWorld:
             self.scene,
             self.static_sim_params,
             position=jnp.array([0, 0]),
-            dimensions=jnp.array([400, 1]),
+            dimensions=jnp.array([200, 1]),
             density=1.0,
             restitution=0.0,
             friction=1.0,
@@ -258,7 +257,7 @@ class MultiWalkerWorld:
 
 
 def main():
-    screen_dim = (600, 400)
+    screen_dim = (1200, 400)
 
     # Create engine with default parameters
     static_sim_params = MW_StaticSimParams()
@@ -279,7 +278,7 @@ def main():
 
     # gif！
     frames = []
-    max_step = 200
+    max_step = 50
     step = 0
     while True:
         actions = -jnp.zeros(
