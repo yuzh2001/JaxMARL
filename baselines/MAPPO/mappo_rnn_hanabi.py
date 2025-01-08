@@ -2,32 +2,27 @@
 Based on PureJaxRL Implementation of IPPO, with changes to give a centralised critic.
 """
 
+import functools
+import os
+from functools import partial
+from typing import Dict, NamedTuple, Sequence, Union
+
+import distrax
+import flax.linen as nn
+import hydra
 import jax
 import jax.numpy as jnp
-import flax.linen as nn
-from flax import struct
 import numpy as np
 import optax
-from flax.linen.initializers import constant, orthogonal
-from typing import Sequence, NamedTuple, Any, Tuple, Union, Dict
-import chex
-import os
-from safetensors.flax import save_file
-from flax.traverse_util import flatten_dict
-
-from flax.training.train_state import TrainState
-import distrax
-import hydra
-from omegaconf import DictConfig, OmegaConf
-from functools import partial
-import jaxmarl
-from jaxmarl.wrappers.baselines import LogWrapper, JaxMARLWrapper
-from jaxmarl.environments.multi_agent_env import MultiAgentEnv, State
-
-
 import wandb
-import functools
-import matplotlib.pyplot as plt
+from flax.linen.initializers import constant, orthogonal
+from flax.training.train_state import TrainState
+from flax.traverse_util import flatten_dict
+from omegaconf import OmegaConf
+from safetensors.flax import save_file
+
+import jaxmarl
+from jaxmarl.wrappers.baselines import JaxMARLWrapper, LogWrapper
 
 
 class HanabiWorldStateWrapper(JaxMARLWrapper):

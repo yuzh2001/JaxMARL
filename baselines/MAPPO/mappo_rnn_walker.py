@@ -16,78 +16,44 @@ import optax
 import wandb
 from flax.linen.initializers import constant, orthogonal
 from flax.training.train_state import TrainState
+from jax2d.sim_state import SimState
 from omegaconf import OmegaConf
 
-from jaxmarl.environments.multiwalker_stability import Multiwalker
+import jaxmarl
 from jaxmarl.wrappers.baselines import JaxMARLWrapper, MPELogWrapper
 
 
-class MPEWorldStateWrapper(JaxMARLWrapper):
+class MultiWalkerWorldStateWrapper(JaxMARLWrapper):
     @partial(jax.jit, static_argnums=0)
     def reset(self, key):
         obs, env_state = self._env.reset(key)
-        obs["world_state"] = self.world_state(obs)
+        obs["world_state"] = self.world_state(obs, env_state)
         return obs, env_state
 
     @partial(jax.jit, static_argnums=0)
     def step(self, key, state, action):
         obs, env_state, reward, done, info = self._env.step(key, state, action)
-        obs["world_state"] = self.world_state(obs)
+        obs["world_state"] = self.world_state(obs, env_state)
         return obs, env_state, reward, done, info
 
     @partial(jax.jit, static_argnums=0)
-    def world_state(self, obs):
-        """
-        For each agent: [agent obs, all other agent obs]
-        """
-
-        @partial(jax.vmap, in_axes=(0, None))
-        def _roll_obs(aidx, all_obs):
-            robs = jnp.roll(all_obs, -aidx, axis=0)
-            robs = robs.flatten()
-            return robs
-
-        all_obs = jnp.array([obs[agent] for agent in self._env.agents]).flatten()
-        all_obs = jnp.expand_dims(all_obs, axis=0).repeat(self._env.num_agents, axis=0)
+    def world_state(self, obs, env_state: SimState):
+        package_index = self._env.num_agents * 5 + 1
+        package_obs = jnp.array(
+            [
+                env_state.polygon.position[package_index][0],
+                env_state.polygon.position[package_index][1],
+                env_state.polygon.rotation[package_index],
+            ]
+        )
+        all_obs = jnp.concatenate(
+            [jnp.array([obs[agent] for agent in self._env.agents]), package_obs]
+        ).flatten()
         return all_obs
 
     def world_state_size(self):
         spaces = [self._env.observation_space(agent) for agent in self._env.agents]
-        return sum([space.shape[-1] for space in spaces])
-
-
-class MultiwalkerStateWrapper(JaxMARLWrapper):
-    @partial(jax.jit, static_argnums=0)
-    def reset(self, key):
-        obs, env_state = self._env.reset(key)
-        obs["world_state"] = self.world_state(obs)
-        return obs, env_state
-
-    @partial(jax.jit, static_argnums=0)
-    def step(self, key, state, action):
-        obs, env_state, reward, done, info = self._env.step(key, state, action)
-        obs["world_state"] = self.world_state(obs)
-        return obs, env_state, reward, done, info
-
-    @partial(jax.jit, static_argnums=0)
-    def world_state(self, obs):
-        """
-        For each agent: [agent obs, all other agent obs]
-        """
-
-        @partial(jax.vmap, in_axes=(0, None))
-        def _roll_obs(aidx, all_obs):
-            robs = jnp.roll(all_obs, -aidx, axis=0)
-            robs = robs.flatten()
-            return robs
-
-        all_obs = jnp.array([obs[agent] for agent in self._env.agents]).flatten()
-        all_obs = jnp.expand_dims(all_obs, axis=0).repeat(self._env.num_agents, axis=0)
-        return all_obs
-
-    def world_state_size(self):
-        spaces = [self._env.observation_space(agent) for agent in self._env.agents]
-        return sum([space.shape[-1] for space in spaces])
+        return sum([space.shape[-1] for space in spaces]) + 3
 
 
 class ScannedRNN(nn.Module):
@@ -202,7 +168,7 @@ def unbatchify(x: jnp.ndarray, agent_list, num_envs, num_actors):
 
 
 def make_train(config):
-    env = Multiwalker(**config["ENV_KWARGS"])
+    env = jaxmarl.make(config["ENV_NAME"], **config["ENV_KWARGS"])
     config["NUM_ACTORS"] = env.num_agents * config["NUM_ENVS"]
     config["NUM_UPDATES"] = (
         config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"]
@@ -216,7 +182,7 @@ def make_train(config):
         else config["CLIP_EPS"]
     )
 
-    env = MPEWorldStateWrapper(env)
+    env = MultiWalkerWorldStateWrapper(env)
     env = MPELogWrapper(env)
 
     def linear_schedule(count):
@@ -618,7 +584,7 @@ def make_train(config):
 
 
 @hydra.main(
-    version_base=None, config_path="config", config_name="mappo_homogenous_rnn_mpe"
+    version_base=None, config_path="config", config_name="mappo_homogenous_rnn_walker"
 )
 def main(config):
     config = OmegaConf.to_container(config)

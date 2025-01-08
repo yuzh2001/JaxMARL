@@ -1,35 +1,35 @@
 from .environments import (
-    SimpleMPE,
-    SimpleTagMPE,
-    SimpleWorldCommMPE,
-    SimpleSpreadMPE,
+    SMAX,
+    Ant,
+    CoinGame,
+    HalfCheetah,
+    Hanabi,
+    HeuristicEnemySMAX,
+    Hopper,
+    Humanoid,
+    InTheGrid,
+    InTheGrid_2p,
+    InTheMatrix,
+    JaxNav,
+    LearnedPolicyEnemySMAX,
+    MultiWalkerEnv,
+    Overcooked,
+    SimpleAdversaryMPE,
     SimpleCryptoMPE,
-    SimpleSpeakerListenerMPE,
     SimpleFacmacMPE,
     SimpleFacmacMPE3a,
     SimpleFacmacMPE6a,
     SimpleFacmacMPE9a,
+    SimpleMPE,
     SimplePushMPE,
-    SimpleAdversaryMPE,
     SimpleReferenceMPE,
-    SMAX,
-    HeuristicEnemySMAX,
-    LearnedPolicyEnemySMAX,
+    SimpleSpeakerListenerMPE,
+    SimpleSpreadMPE,
+    SimpleTagMPE,
+    SimpleWorldCommMPE,
     SwitchRiddle,
-    Ant,
-    Humanoid,
-    Hopper,
     Walker2d,
-    HalfCheetah,
-    InTheGrid,
-    InTheGrid_2p,
-    InTheMatrix,
-    Hanabi,
-    Overcooked,
-    CoinGame,
-    JaxNav,
 )
-
 
 
 def make(env_id: str, **env_kwargs):
@@ -97,7 +97,7 @@ def make(env_id: str, **env_kwargs):
         env = InTheGrid_2p(**env_kwargs)
     elif env_id == "storm_np":
         env = InTheMatrix(**env_kwargs)
-    
+
     # 6. Hanabi
     elif env_id == "hanabi":
         env = Hanabi(**env_kwargs)
@@ -109,12 +109,17 @@ def make(env_id: str, **env_kwargs):
     # 8. Coin Game
     elif env_id == "coin_game":
         env = CoinGame(**env_kwargs)
-        
+
     # 9. JaxNav
     elif env_id == "jaxnav":
         env = JaxNav(**env_kwargs)
 
+    # 10. MultiWalkerEnv
+    elif env_id == "multiwalker":
+        env = MultiWalkerEnv(**env_kwargs)
+
     return env
+
 
 registered_envs = [
     "MPE_simple_v3",
@@ -146,4 +151,5 @@ registered_envs = [
     "overcooked",
     "coin_game",
     "jaxnav",
+    "multiwalker",
 ]

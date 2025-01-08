@@ -1,25 +1,25 @@
-from .multi_agent_env import MultiAgentEnv, State
+from .coin_game import CoinGame
+from .hanabi import Hanabi
+from .jaxnav import JaxNav
+from .mabrax import Ant, HalfCheetah, Hopper, Humanoid, Walker2d
 from .mpe import (
-    SimpleMPE,
-    SimpleTagMPE,
-    SimpleWorldCommMPE,
-    SimpleSpreadMPE,
-    SimpleCryptoMPE,
-    SimpleSpeakerListenerMPE,
-    SimplePushMPE,
     SimpleAdversaryMPE,
-    SimpleReferenceMPE,
+    SimpleCryptoMPE,
     SimpleFacmacMPE,
     SimpleFacmacMPE3a,
     SimpleFacmacMPE6a,
-    SimpleFacmacMPE9a
+    SimpleFacmacMPE9a,
+    SimpleMPE,
+    SimplePushMPE,
+    SimpleReferenceMPE,
+    SimpleSpeakerListenerMPE,
+    SimpleSpreadMPE,
+    SimpleTagMPE,
+    SimpleWorldCommMPE,
 )
-from .smax import SMAX, HeuristicEnemySMAX, LearnedPolicyEnemySMAX
-from .switch_riddle import SwitchRiddle
+from .multi_agent_env import MultiAgentEnv, State
+from .multiwalker import MultiWalkerEnv
 from .overcooked import Overcooked, overcooked_layouts
-from .mabrax import Ant, Humanoid, Hopper, Walker2d, HalfCheetah
-from .hanabi import Hanabi
+from .smax import SMAX, HeuristicEnemySMAX, LearnedPolicyEnemySMAX
 from .storm import InTheGrid, InTheGrid_2p, InTheMatrix
-from .coin_game import CoinGame
-from .jaxnav import JaxNav
-
+from .switch_riddle import SwitchRiddle
