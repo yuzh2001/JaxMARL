@@ -93,8 +93,6 @@ class MultiWalkerEnv(MultiAgentEnv):
         Dict[str, chex.Array], SimState, Dict[str, float], Dict[str, bool], Dict
     ]:
         # 环境步进
-        jax.debug.print("{actions}", actions=actions)
-        print("actions", actions)
         actions_as_array = jnp.array(
             [actions[agent] for agent in self.agents]
         ).flatten()

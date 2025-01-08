@@ -11,12 +11,12 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-import wandb
 from flax.linen.initializers import constant, orthogonal
 from flax.training.train_state import TrainState
 from omegaconf import OmegaConf
 
 import jaxmarl
+import wandb
 from jaxmarl.wrappers.baselines import LogWrapper
 
 
@@ -334,7 +334,7 @@ def make_train(config, rng_init):
     return train
 
 
-@hydra.main(version_base=None, config_path="config", config_name="ippo_ff_mabrax")
+@hydra.main(version_base=None, config_path="config", config_name="ippo_ff_walker")
 def main(config):
     config = OmegaConf.to_container(config)
 
