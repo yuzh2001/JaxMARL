@@ -222,26 +222,18 @@ class MultiWalkerWorld:
         self.walkers: list[BipedalWalker] = []
         self.package_index = None
 
-    def reset(self):
-        self.color_table = jnp.ones((self.static_sim_params.num_polygons, 3))
-        self.scene = create_empty_sim(
-            self.static_sim_params,
-            add_floor=False,
-            add_walls_and_ceiling=False,
-        )
-
-        ## setup walkers
-        start_x = jnp.array([3 * i + 5 for i in range(self._n_walkers)])
+    def _generate_walkers(self):
+        self.start_x = jnp.array([3 * i + 5 for i in range(self._n_walkers)])
         for i in range(self._n_walkers):
             walker = BipedalWalker(
                 self,
                 self.static_sim_params,
-                init_x=start_x[i],
+                init_x=self.start_x[i],
             )
             self.scene = walker.setup(self.scene)
             self.walkers.append(walker)
 
-        ## generate terrain
+    def _generate_terrain(self):
         self.scene, _ = add_rectangle_to_scene(
             self.scene,
             self.static_sim_params,
@@ -253,8 +245,8 @@ class MultiWalkerWorld:
             fixated=True,
         )
 
-        ## generate package
-        package_x = jnp.mean(start_x)
+    def _generate_package(self):
+        package_x = jnp.mean(self.start_x)
         package_y = TERRAIN_HEIGHT + 3 * LEG_H
         package_scale = self._n_walkers / 1.75
         self.scene, (_, self.package_index) = add_polygon_to_scene(
@@ -270,6 +262,17 @@ class MultiWalkerWorld:
             friction=0.5,
         )
 
+    def reset(self):
+        self.color_table = jnp.ones((self.static_sim_params.num_polygons, 3))
+        self.scene = create_empty_sim(
+            self.static_sim_params,
+            add_floor=False,
+            add_walls_and_ceiling=False,
+        )
+
+        self._generate_walkers()
+        self._generate_terrain()
+        self._generate_package()
         return self.scene
 
     def change_color(self, index, color):
