@@ -1,6 +1,7 @@
 import jax
 import jax.numpy as jnp
 from jax2d.maths import rmat
+from jax2d.sim_state import SimState
 from jaxgl.renderer import clear_screen, make_renderer
 from jaxgl.shaders import (
     add_mask_to_shader,
@@ -28,7 +29,7 @@ def make_render_pixels(static_sim_params, screen_dim):
     )
 
     @jax.jit
-    def render_pixels(state, color_table, step):
+    def render_pixels(state: SimState, color_table, step):
         pixels = cleared_screen
 
         def _world_space_to_pixel_spacestep(x):
@@ -63,7 +64,14 @@ def make_render_pixels(static_sim_params, screen_dim):
         )
         rect_patch_positions = (rect_positions_pixel_space - 100 / 2).astype(jnp.int32)
         rect_patch_positions = jnp.maximum(rect_patch_positions, 0)
-        # jax.debug.print("state.polygon.position: {x}", x=state.polygon.position)
+        # jax.debug.print("state.collision_matrix: {x}", x=state.acc_rr_manifolds.active)
+        jax.debug.print(
+            "state.collision_matrix:collision_point: {x}",
+            x=state.acc_rr_manifolds.penetration[0],
+        )
+        # jax.debug.print("state.polygon.position[0]: {x}", x=state.polygon.position[0])
+        # jax.debug.print("state.polygon.rotation: {x}", x=state.polygon.rotation)
+        # jax.debug.print("state.polygon.velocity: {x}", x=state.polygon.velocity)
         # jax.debug.print("rect_positions_pixel_space: {x}", x=rect_positions_pixel_space)
         # jax.debug.print("rect_patch_positions: {x}", x=rect_patch_positions)
         # jax.debug.print("rect_patch_positions max: {x}", x=rect_patch_positions)

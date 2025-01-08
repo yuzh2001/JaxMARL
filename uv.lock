@@ -936,6 +936,7 @@ dependencies = [
     { name = "jaxgl" },
     { name = "jaxlib" },
     { name = "matplotlib" },
+    { name = "momaland" },
     { name = "mujoco" },
     { name = "omegaconf" },
     { name = "optax" },
@@ -980,6 +981,7 @@ requires-dist = [
     { name = "jaxgl", specifier = ">=1.0.1" },
     { name = "jaxlib" },
     { name = "matplotlib" },
+    { name = "momaland", specifier = ">=0.1.1" },
     { name = "mujoco", specifier = "==3.1.3" },
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "omegaconf", marker = "extra == 'algs'", specifier = ">=2.3.0" },
@@ -1297,6 +1299,36 @@ wheels = [
 ]
 
 [[package]]
+name = "momaland"
+version = "0.1.1"
+source = { registry = "https://pypi.cstcloud.cn/simple" }
+dependencies = [
+    { name = "gymnasium" },
+    { name = "networkx" },
+    { name = "numpy" },
+    { name = "pettingzoo", extra = ["butterfly", "sisl"] },
+    { name = "pillow" },
+    { name = "pygame" },
+    { name = "pyopengl" },
+    { name = "pyopengl-accelerate" },
+    { name = "sympy" },
+    { name = "wandb" },
+]
+sdist = { url = "https://pypi.cstcloud.cn/packages/21/d8/a0e61753e96a9017b9dd8fef29014bdda21a74a9bf4167d8ac01788f86ad/momaland-0.1.1.tar.gz", hash = "sha256:ffd61796d5cfbac21125b6fe1d156b816c44d404d5d072e3accdcf7c45c18b5a" }
+wheels = [
+    { url = "https://pypi.cstcloud.cn/packages/93/23/5813f20cd417187ce167da1ab4efd69e1afc9286ec8ffd662d1fdfdb7524/momaland-0.1.1-py3-none-any.whl", hash = "sha256:288f27fb72e2db67bc4aec9d250d5ddb2526667f52b4c825ccc4387355eb3cc9" },
+]
+
+[[package]]
+name = "mpmath"
+version = "1.3.0"
+source = { registry = "https://pypi.cstcloud.cn/simple" }
+sdist = { url = "https://pypi.cstcloud.cn/packages/e0/47/dd32fa426cc72114383ac549964eecb20ecfd886d1e5ccf5340b55b02f57/mpmath-1.3.0.tar.gz", hash = "sha256:7a28eb2a9774d00c7bc92411c19a89209d5da7c4c9a9e227be8330a23a25b91f" }
+wheels = [
+    { url = "https://pypi.cstcloud.cn/packages/43/e3/7d92a15f894aa0c9c4b49b8ee9ac9850d6e63b03c9c32c0367a13ae62209/mpmath-1.3.0-py3-none-any.whl", hash = "sha256:a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c" },
+]
+
+[[package]]
 name = "msgpack"
 version = "1.1.0"
 source = { registry = "https://pypi.cstcloud.cn/simple" }
@@ -1403,6 +1435,15 @@ source = { registry = "https://pypi.cstcloud.cn/simple" }
 sdist = { url = "https://pypi.cstcloud.cn/packages/83/f8/51569ac65d696c8ecbee95938f89d4abf00f47d58d48f6fbabfe8f0baefe/nest_asyncio-1.6.0.tar.gz", hash = "sha256:6f172d5449aca15afd6c646851f4e31e02c598d553a667e38cafa997cfec55fe" }
 wheels = [
     { url = "https://pypi.cstcloud.cn/packages/a0/c4/c2971a3ba4c6103a3d10c4b0f24f461ddc027f0f09763220cf35ca1401b3/nest_asyncio-1.6.0-py3-none-any.whl", hash = "sha256:87af6efd6b5e897c81050477ef65c62e2b2f35d51703cae01aff2905b1852e1c" },
+]
+
+[[package]]
+name = "networkx"
+version = "3.4.2"
+source = { registry = "https://pypi.cstcloud.cn/simple" }
+sdist = { url = "https://pypi.cstcloud.cn/packages/fd/1d/06475e1cd5264c0b870ea2cc6fdb3e37177c1e565c43f56ff17a10e3937f/networkx-3.4.2.tar.gz", hash = "sha256:307c3669428c5362aab27c8a1260aa8f47c4e91d3891f48be0141738d8d053e1" }
+wheels = [
+    { url = "https://pypi.cstcloud.cn/packages/b9/54/dd730b32ea14ea797530a4479b2ed46a6fb250f682a9cfb997e968bf0261/networkx-3.4.2-py3-none-any.whl", hash = "sha256:df5d4365b724cf81b8c6a7312509d0c22386097011ad1abe274afd5e9d3bbc5f" },
 ]
 
 [[package]]
@@ -1682,6 +1723,10 @@ wheels = [
 ]
 
 [package.optional-dependencies]
+butterfly = [
+    { name = "pygame" },
+    { name = "pymunk" },
+]
 sisl = [
     { name = "box2d-py" },
     { name = "pygame" },
@@ -1856,11 +1901,33 @@ sdist = { url = "https://pypi.cstcloud.cn/packages/d3/03/6d80fc57859183ecfe9abb8
 
 [[package]]
 name = "pyopengl"
+version = "3.1.6"
+source = { registry = "https://pypi.cstcloud.cn/simple" }
+sdist = { url = "https://pypi.cstcloud.cn/packages/5b/01/f8fd986bc7f456f1a925ee0239f0391838ade92cdb6e5b674ffb8b86cfd6/PyOpenGL-3.1.6.tar.gz", hash = "sha256:8ea6c8773927eda7405bffc6f5bb93be81569a7b05c8cac50cd94e969dce5e27" }
+wheels = [
+    { url = "https://pypi.cstcloud.cn/packages/80/07/003fe74d2af04be917035b42c53c7ea9e3abe1e353753cebccfe792b4e52/PyOpenGL-3.1.6-py3-none-any.whl", hash = "sha256:a7139bc3e15d656feae1f7e3ef68c799941ed43fadc78177a23db7e946c20738" },
+]
+
+[[package]]
+name = "pyopengl-accelerate"
 version = "3.1.7"
 source = { registry = "https://pypi.cstcloud.cn/simple" }
-sdist = { url = "https://pypi.cstcloud.cn/packages/72/b6/970868d44b619292f1f54501923c69c9bd0ab1d2d44cf02590eac2706f4f/PyOpenGL-3.1.7.tar.gz", hash = "sha256:eef31a3888e6984fd4d8e6c9961b184c9813ca82604d37fe3da80eb000a76c86" }
+sdist = { url = "https://pypi.cstcloud.cn/packages/93/09/d08b3d07dbd88258276496a47273778f330f5ccf8390cb21b16b29d660de/PyOpenGL-accelerate-3.1.7.tar.gz", hash = "sha256:2b123621273a939f7fd2ec227541e399f9b5d4e815d69ae0bdb1b6c70a293680" }
 wheels = [
-    { url = "https://pypi.cstcloud.cn/packages/99/48/00e31747821d3fc56faddd00a4725454d1e694a8b67d715cf20f531506a5/PyOpenGL-3.1.7-py3-none-any.whl", hash = "sha256:a6ab19cf290df6101aaf7470843a9c46207789855746399d0af92521a0a92b7a" },
+    { url = "https://pypi.cstcloud.cn/packages/13/a5/cf539c9d00f18ee9fbcaa67cf06fecd8d6c0be6f68ab9dcc60c203025fa1/PyOpenGL_accelerate-3.1.7-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:f2143cf1073c1377111873ec53b67cb9a75a546a101d8292670d0ffe40eca50d" },
+    { url = "https://pypi.cstcloud.cn/packages/3c/04/89bbadb8816e1b58ab15c9cd73a4a83c032eda810b4c87faf75cd1277b05/PyOpenGL_accelerate-3.1.7-cp310-cp310-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:8a5c76bfe6dead3ee79619e2ba143650a70c462ffcff150bbefc29e792410f58" },
+    { url = "https://pypi.cstcloud.cn/packages/ff/80/29b673d8775f52a4ed86cc3f8532d699885cdc4d209c1a21eb8a3dc7bfd0/PyOpenGL_accelerate-3.1.7-cp310-cp310-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:b055975515fed03e9b84a348950cad3cba0441d5a5dcd264877d58e0d239019c" },
+    { url = "https://pypi.cstcloud.cn/packages/8e/1b/ffa81ab7aa1cdc3231733994841e237898deda10fe4dc2fa764fcb07864f/PyOpenGL_accelerate-3.1.7-cp310-cp310-musllinux_1_1_i686.whl", hash = "sha256:ccb73afacc8e0ed4fc68ff9ab3042e4c6bce3ce0587ec9d34dee18c4f032575e" },
+    { url = "https://pypi.cstcloud.cn/packages/80/c4/d715a27651c2fb550a59a524ee12381b205fe0cbfb7e7ebecba1157a7db5/PyOpenGL_accelerate-3.1.7-cp310-cp310-musllinux_1_1_x86_64.whl", hash = "sha256:cf4ef5135069add79345bc954b12da1a4c3708ed99e3fd4c9b512cf5dc5767a0" },
+    { url = "https://pypi.cstcloud.cn/packages/9f/f6/faf9e538b8040603b2a56b9cc1b70c8274f2faca64fc3351525afdb6d796/PyOpenGL_accelerate-3.1.7-cp310-cp310-win32.whl", hash = "sha256:c2636803fcbcb0767b1febd28153fd169a732577430cc9d2ab60ce322aaa1097" },
+    { url = "https://pypi.cstcloud.cn/packages/29/19/e1be654a12591da2e4bb4fe81ac5326f0aa61eeb653bc136915fbdedb314/PyOpenGL_accelerate-3.1.7-cp310-cp310-win_amd64.whl", hash = "sha256:ab8b7c7b4bab48b8fbd52481b2618ae382ea66952008c2a0e8908dfca5caa61d" },
+    { url = "https://pypi.cstcloud.cn/packages/86/56/dcbae824e7b6ed5193c674da9ccabe866bae775bed9594cb9cb9228e00af/PyOpenGL_accelerate-3.1.7-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:ad8e2d186878946e5c4896d1c241af6b5f8cd87433e46741d29c3fdea6eba2c5" },
+    { url = "https://pypi.cstcloud.cn/packages/d9/5f/4d88d6d8aa0277e087e9d2e821a2c92640158db2d82f0ebb2cdde63e1f0d/PyOpenGL_accelerate-3.1.7-cp311-cp311-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:6c1b2b93d25e9ec8475416ed18c27a0231f29dffe0b524d827276802534a3cde" },
+    { url = "https://pypi.cstcloud.cn/packages/84/58/d1aff3b46ecb5ac4d6f1bf0fa029ccffc57c046f46f579c86f2a09b40377/PyOpenGL_accelerate-3.1.7-cp311-cp311-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ed4efe15eedc79415ee192a9ca8bec04f19c7e313444ac50e50ea26c80606ce2" },
+    { url = "https://pypi.cstcloud.cn/packages/cb/92/e58891603797f7b28551f682fc6e8a38c3ed7aaf546e8720c690f85e6f7e/PyOpenGL_accelerate-3.1.7-cp311-cp311-musllinux_1_1_i686.whl", hash = "sha256:e8b41f94a185c71d4c2658e9ee1a6f14e555e8b83bd4e18e6367d66da6a39242" },
+    { url = "https://pypi.cstcloud.cn/packages/f0/bb/2e5d5305d338ab9aa077de9698258bb383e8d2e2995727e073c2fc67ddf0/PyOpenGL_accelerate-3.1.7-cp311-cp311-musllinux_1_1_x86_64.whl", hash = "sha256:71b8a862ab85e02b7f88d935045be25ebc4104c3676263f0b90a91a520b66bd5" },
+    { url = "https://pypi.cstcloud.cn/packages/af/04/01ddea04df9a40cfac42323cc84b527594589bf5116bb3fed34e4e55fce1/PyOpenGL_accelerate-3.1.7-cp311-cp311-win32.whl", hash = "sha256:67b9f9d86ed5a928ebf93ace86dd8a4959388e04e89e115075575bbbe72c6546" },
+    { url = "https://pypi.cstcloud.cn/packages/c6/e3/e4c02ccbba4012e16ece90f0e1ccc8e2aa781edd95d6ab193e1d4a9dd63d/PyOpenGL_accelerate-3.1.7-cp311-cp311-win_amd64.whl", hash = "sha256:d3678b03e2cb41f87c84411313c441466497b7b829678ad5801944820f986cb7" },
 ]
 
 [[package]]
@@ -2183,6 +2250,18 @@ source = { registry = "https://pypi.cstcloud.cn/simple" }
 sdist = { url = "https://pypi.cstcloud.cn/packages/88/04/b5bf6d21dc4041000ccba7eb17dd3055feb237e7ffc2c20d3fae3af62baa/smmap-5.0.1.tar.gz", hash = "sha256:dceeb6c0028fdb6734471eb07c0cd2aae706ccaecab45965ee83f11c8d3b1f62" }
 wheels = [
     { url = "https://pypi.cstcloud.cn/packages/a7/a5/10f97f73544edcdef54409f1d839f6049a0d79df68adbc1ceb24d1aaca42/smmap-5.0.1-py3-none-any.whl", hash = "sha256:e6d8668fa5f93e706934a62d7b4db19c8d9eb8cf2adbb75ef1b675aa332b69da" },
+]
+
+[[package]]
+name = "sympy"
+version = "1.13.3"
+source = { registry = "https://pypi.cstcloud.cn/simple" }
+dependencies = [
+    { name = "mpmath" },
+]
+sdist = { url = "https://pypi.cstcloud.cn/packages/11/8a/5a7fd6284fa8caac23a26c9ddf9c30485a48169344b4bd3b0f02fef1890f/sympy-1.13.3.tar.gz", hash = "sha256:b27fd2c6530e0ab39e275fc9b683895367e51d5da91baa8d3d64db2565fec4d9" }
+wheels = [
+    { url = "https://pypi.cstcloud.cn/packages/99/ff/c87e0622b1dadea79d2fb0b25ade9ed98954c9033722eb707053d310d4f3/sympy-1.13.3-py3-none-any.whl", hash = "sha256:54612cf55a62755ee71824ce692986f23c88ffa77207b30c1368eda4a7060f73" },
 ]
 
 [[package]]

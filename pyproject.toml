@@ -53,6 +53,7 @@ dependencies = [
   "tqdm>=4.66.0",
   "jax2d>=1.0.0",
   "jaxgl>=1.0.1",
+  "momaland>=0.1.1",
 ]
 
 [project.optional-dependencies]

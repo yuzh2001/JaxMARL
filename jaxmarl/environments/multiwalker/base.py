@@ -13,7 +13,6 @@ from jax2d.scene import (
 )
 from jax2d.sim_state import SimParams, SimState, StaticSimParams
 
-from jaxmarl.environments.multi_agent_env import MultiAgentEnv
 from jaxmarl.environments.multiwalker.constants import (
     HULL_POLY,
     LEG_DOWN,
@@ -236,7 +235,7 @@ class MultiWalkerWorld:
             self.walkers.append(walker)
 
     def _generate_terrain(self):
-        self.scene, _ = add_rectangle_to_scene(
+        self.scene, (_, self.terrain_index) = add_rectangle_to_scene(
             self.scene,
             self.static_sim_params,
             position=jnp.array([0, 0]),
@@ -264,7 +263,7 @@ class MultiWalkerWorld:
             friction=0.5,
         )
 
-    def reset(self):
+    def reset(self) -> SimState:
         self.color_table = jnp.ones((self.static_sim_params.num_polygons, 3))
         self.scene = create_empty_sim(
             self.static_sim_params,
@@ -281,10 +280,6 @@ class MultiWalkerWorld:
         self.color_table = self.color_table.at[index].set(color)
 
 
-class MultiWalkerEnv(MultiAgentEnv):
-    pass
-
-
 def main():
     screen_dim = (1200, 400)
 
@@ -293,6 +288,7 @@ def main():
     n_package = 1
     static_sim_params = MW_StaticSimParams(
         num_polygons=n_walkers * 5 + n_package + 2,
+        num_circles=2,
         num_thrusters=n_walkers * 1,
         num_joints=n_walkers * 4,
     )
@@ -309,7 +305,7 @@ def main():
     step_fn = jax.jit(engine.step)
 
     frames = []
-    max_step = 50
+    max_step = 35
     step = 0
     while True:
         actions = -jnp.zeros(
