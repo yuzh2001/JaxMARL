@@ -3,8 +3,9 @@ Based on PureJaxRL Implementation of IPPO, with changes to give a centralised cr
 """
 
 import functools
+import os
 from functools import partial
-from typing import Dict, NamedTuple, Sequence
+from typing import Dict, NamedTuple, Sequence, Union
 
 import distrax
 import flax.linen as nn
@@ -16,11 +17,13 @@ import optax
 import wandb
 from flax.linen.initializers import constant, orthogonal
 from flax.training.train_state import TrainState
+from flax.traverse_util import flatten_dict
 from jax2d.sim_state import SimState
 from omegaconf import OmegaConf
+from safetensors.flax import save_file
 
 import jaxmarl
-from jaxmarl.wrappers.baselines import JaxMARLWrapper, MPELogWrapper
+from jaxmarl.wrappers.baselines import JaxMARLWrapper, LogWrapper
 
 
 class MultiWalkerWorldStateWrapper(JaxMARLWrapper):
@@ -183,7 +186,7 @@ def make_train(config):
     )
 
     env = MultiWalkerWorldStateWrapper(env)
-    env = MPELogWrapper(env)
+    env = LogWrapper(env)
 
     def linear_schedule(count):
         frac = (
@@ -588,7 +591,7 @@ def make_train(config):
 )
 def main(config):
     config = OmegaConf.to_container(config)
-    wandb.init(
+    run = wandb.init(
         entity=config["ENTITY"],
         project=config["PROJECT"],
         tags=["MAPPO", "RNN", config["ENV_NAME"]],
@@ -599,6 +602,24 @@ def main(config):
     with jax.disable_jit(False):
         train_jit = jax.jit(make_train(config))
         out = train_jit(rng)
+
+    # save params
+    if config["SAVE_PATH"] is not None:
+
+        def save_params(params: Dict, filename: Union[str, os.PathLike]) -> None:
+            flattened_dict = flatten_dict(params, sep=",")
+            save_file(flattened_dict, filename)
+
+        params = out["runner_state"][0][0][0].params
+        save_dir = os.path.join(config["SAVE_PATH"], run.project, run.name)
+        os.makedirs(save_dir, exist_ok=True)
+        save_params(params, f"{save_dir}/model.safetensors")
+        print(f"Parameters of first batch saved in {save_dir}/model.safetensors")
+
+        # upload this to wandb as an artifact
+        artifact = wandb.Artifact(f"{run.name}-checkpoint", type="checkpoint")
+        artifact.add_file(f"{save_dir}/model.safetensors")
+        artifact.save()
 
 
 if __name__ == "__main__":
