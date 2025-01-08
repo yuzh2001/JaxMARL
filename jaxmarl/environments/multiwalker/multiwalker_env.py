@@ -10,15 +10,11 @@ from jax2d.sim_state import SimState
 
 from jaxmarl.environments import spaces
 from jaxmarl.environments.multi_agent_env import MultiAgentEnv
-from jaxmarl.environments.multiwalker import (
-    MultiWalkerWorld,
-    _extract_joint,
-    _extract_polygon,
-    _is_ground_contact,
-)
-from jaxmarl.environments.multiwalker.base import MW_SimParams, MW_StaticSimParams
-from jaxmarl.environments.multiwalker.constants import PACKAGE_LENGTH, SCALE
-from jaxmarl.environments.multiwalker.render import make_render_pixels
+
+from .base import MultiWalkerWorld, MW_SimParams, MW_StaticSimParams
+from .constants import PACKAGE_LENGTH, SCALE
+from .render import make_render_pixels
+from .utils import _extract_joint, _extract_polygon, _is_ground_contact
 
 os.environ["SDL_VIDEODRIVER"] = "dummy"
 
@@ -96,8 +92,9 @@ class MultiWalkerEnv(MultiAgentEnv):
     ) -> Tuple[
         Dict[str, chex.Array], SimState, Dict[str, float], Dict[str, bool], Dict
     ]:
-        print("环境在此步进")
         # 环境步进
+        jax.debug.print("{actions}", actions=actions)
+        print("actions", actions)
         actions_as_array = jnp.array(
             [actions[agent] for agent in self.agents]
         ).flatten()

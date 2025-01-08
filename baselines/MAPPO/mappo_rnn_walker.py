@@ -22,7 +22,7 @@ from jax2d.sim_state import SimState
 from omegaconf import OmegaConf
 from safetensors.flax import save_file
 
-import jaxmarl
+from jaxmarl import make
 from jaxmarl.wrappers.baselines import JaxMARLWrapper, LogWrapper
 
 
@@ -50,8 +50,12 @@ class MultiWalkerWorldStateWrapper(JaxMARLWrapper):
             ]
         )
         all_obs = jnp.concatenate(
-            [jnp.array([obs[agent] for agent in self._env.agents]), package_obs]
+            [
+                jnp.array([obs[agent] for agent in self._env.agents]).flatten(),
+                package_obs,
+            ]
         ).flatten()
+        all_obs = jnp.expand_dims(all_obs, axis=0).repeat(self._env.num_agents, axis=0)
         return all_obs
 
     def world_state_size(self):
@@ -110,6 +114,7 @@ class ActorRNN(nn.Module):
             bias_init=constant(0.0),
         )(embedding)
         actor_mean = nn.relu(actor_mean)
+        print(self.action_dim)
         action_logits = nn.Dense(
             self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
         )(actor_mean)
@@ -171,7 +176,7 @@ def unbatchify(x: jnp.ndarray, agent_list, num_envs, num_actors):
 
 
 def make_train(config):
-    env = jaxmarl.make(config["ENV_NAME"], **config["ENV_KWARGS"])
+    env = make(config["ENV_NAME"], **config["ENV_KWARGS"])
     config["NUM_ACTORS"] = env.num_agents * config["NUM_ENVS"]
     config["NUM_UPDATES"] = (
         config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"]
@@ -198,7 +203,10 @@ def make_train(config):
 
     def train(rng):
         # INIT NETWORK
-        actor_network = ActorRNN(env.action_space(env.agents[0]).n, config=config)
+        print(env.action_space(env.agents[0]).shape[0])
+        actor_network = ActorRNN(
+            env.action_space(env.agents[0]).shape[0], config=config
+        )
         critic_network = CriticRNN(config=config)
         rng, _rng_actor, _rng_critic = jax.random.split(rng, 3)
         ac_init_x = (
@@ -285,11 +293,13 @@ def make_train(config):
                 ac_in = (
                     obs_batch[np.newaxis, :],
                     last_done[np.newaxis, :],
+                    # jnp.array([1, 1, 1, 1]),
                 )
                 ac_hstate, pi = actor_network.apply(
                     train_states[0].params, hstates[0], ac_in
                 )
                 action = pi.sample(seed=_rng)
+                print("action", action)
                 log_prob = pi.log_prob(action)
                 env_act = unbatchify(
                     action, env.agents, config["NUM_ENVS"], env.num_agents
