@@ -1,4 +1,6 @@
+import jax.numpy as jnp
 from jax import jit
+from jax2d.collision import find_axis_of_least_penetration
 from jax2d.engine import Joint, RigidBody
 from jax2d.sim_state import SimState
 
@@ -72,4 +74,19 @@ def _extract_joint(state: SimState, index) -> Joint:
         max_rotation,
         is_fixed_joint,
         rotation,
+    )
+
+
+def _is_colliding(a: RigidBody, b: RigidBody):
+    # Find axes of least penetration
+    a_sep, _, _ = find_axis_of_least_penetration(a, b)
+    b_sep, _, _ = find_axis_of_least_penetration(b, a)
+    most_sep = jnp.maximum(a_sep, b_sep)
+    is_colliding = (most_sep < 0) & a.active & b.active
+    return is_colliding
+
+
+def _is_ground_contact(state: SimState, terrain_index: int, index: int):
+    return _is_colliding(
+        _extract_polygon(state, index), _extract_polygon(state, terrain_index)
     )

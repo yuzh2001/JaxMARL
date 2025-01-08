@@ -212,7 +212,6 @@ class MultiWalkerWorld:
 
     def _generate_walkers(self):
         self.start_x = jnp.array([5 * i + 3 for i in range(self._n_walkers)])
-        jax.debug.print("start_x: {x}", x=self.start_x)
         for i in range(self._n_walkers):
             walker = BipedalWalker(
                 self,

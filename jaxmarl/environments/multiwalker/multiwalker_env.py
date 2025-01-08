@@ -1,11 +1,10 @@
 import os
 from functools import partial
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 import chex
 import jax
 import jax.numpy as jnp
-from jax2d.collision import find_axis_of_least_penetration
 from jax2d.engine import PhysicsEngine, RigidBody
 from jax2d.sim_state import SimState
 
@@ -15,6 +14,7 @@ from jaxmarl.environments.multiwalker import (
     MultiWalkerWorld,
     _extract_joint,
     _extract_polygon,
+    _is_ground_contact,
 )
 from jaxmarl.environments.multiwalker.base import MW_SimParams, MW_StaticSimParams
 from jaxmarl.environments.multiwalker.constants import PACKAGE_LENGTH, SCALE
@@ -34,6 +34,9 @@ class MultiWalkerEnv(MultiAgentEnv):
         self.position_noise = position_noise
         self.angle_noise = angle_noise
         self.screen_dim = (1200, 400)
+
+        self.terrain_index = self.n_walkers * 5
+        self.package_index = self.n_walkers * 5 + 1
 
         self.key = jax.random.PRNGKey(42)
         self.package_scale = self.n_walkers / 1.75
@@ -85,37 +88,6 @@ class MultiWalkerEnv(MultiAgentEnv):
         return self.get_obs(state), state
 
     @partial(jax.jit, static_argnums=(0,))
-    def step(
-        self,
-        key: chex.PRNGKey,
-        state: SimState,
-        actions: Dict[str, chex.Array],
-        reset_state: Optional[SimState] = None,
-    ) -> Tuple[
-        Dict[str, chex.Array], SimState, Dict[str, float], Dict[str, bool], Dict
-    ]:
-        """Performs step transitions in the environment. Resets the environment if done.
-        To control the reset state, pass `reset_state`. Otherwise, the environment will reset randomly."""
-
-        key, key_reset = jax.random.split(key)
-        obs_st, states_st, rewards, dones, infos = self.step_env(key, state, actions)
-
-        if reset_state is None:
-            obs_re, states_re = self.reset(key_reset)
-        else:
-            states_re = reset_state
-            obs_re = self.get_obs(states_re)
-
-        # Auto-reset environment based on termination
-        states = jax.tree.map(
-            lambda x, y: jax.lax.select(dones["__all__"], x, y), states_re, states_st
-        )
-        obs = jax.tree.map(
-            lambda x, y: jax.lax.select(dones["__all__"], x, y), obs_re, obs_st
-        )
-        return obs, states, rewards, dones, infos
-
-    @partial(jax.jit, static_argnums=(0,))
     def step_env(
         self,
         key: chex.PRNGKey,
@@ -133,44 +105,70 @@ class MultiWalkerEnv(MultiAgentEnv):
             [actions_as_array, jnp.zeros(self.static_sim_params.num_thrusters)]
         )
         next_state, _ = self.step_fn(state, self.sim_params, actions_as_array)
-
+        next_state: SimState = next_state
         # 获取观测
         observations = self.get_obs(next_state)
 
+        def _calculate_reward():
+            """
+            - forward * 1
+            - package contact ground: -100[done]
+            - walker contact ground: -10[done]
+            - hull angle change: -5*rotation
+            """
+            done = False
+            overall_reward = 0.0
+
+            package_initial_x = jnp.mean(
+                jnp.array([5 * i + 3 for i in range(self.n_walkers)])
+            )
+            forward_reward = (
+                next_state.polygon.position[self.package_index][0] - package_initial_x
+            ) * 1.0
+            overall_reward += forward_reward
+
+            package_contact_ground = _is_ground_contact(
+                state, self.terrain_index, self.package_index
+            )
+            package_contact_ground_reward = -100.0 * package_contact_ground
+            overall_reward += package_contact_ground_reward
+            done = done | package_contact_ground
+
+            for i in range(self.n_walkers):
+                walker_contact_ground = _is_ground_contact(
+                    state, self.terrain_index, i * 5
+                )
+                walker_contact_ground_reward = -10.0 * walker_contact_ground
+                overall_reward += walker_contact_ground_reward
+                done = done | walker_contact_ground
+
+                hull_angle_change = next_state.polygon.rotation[i * 5]
+                hull_angle_change_reward = -5.0 * hull_angle_change
+                overall_reward += hull_angle_change_reward
+
+            return overall_reward, done
+
         # 计算奖励
-        rewards = {agent: next_state.reward for agent in self.agents}
-        rewards["__all__"] = next_state.reward
+        rwd, done = _calculate_reward()
+        rewards = {agent: rwd / self.n_walkers for agent in self.agents}
+        rewards["__all__"] = rwd
 
         # 计算终止
-        dones = {agent: next_state.done.astype(jnp.bool_) for agent in self.agents}
-        dones["__all__"] = next_state.done.astype(jnp.bool_)
+        dones = {agent: done for agent in self.agents}
+        dones["__all__"] = done
+
         return (
             observations,
             next_state,  # type: ignore
             rewards,
             dones,
-            next_state.info,
+            {},
         )
 
     def get_obs(self, state: SimState) -> Dict[str, chex.Array]:
         # 通过取出self.env里存放的walker里的对应index，从state里取出观测
-
-        walkers = self.env.walkers
         package_index = self.n_walkers * 5 + 1
         terrain_index = self.n_walkers * 5
-
-        def _is_colliding(a: RigidBody, b: RigidBody):
-            # Find axes of least penetration
-            a_sep, _, _ = find_axis_of_least_penetration(a, b)
-            b_sep, _, _ = find_axis_of_least_penetration(b, a)
-            most_sep = jnp.maximum(a_sep, b_sep)
-            is_colliding = (most_sep < 0) & a.active & b.active
-            return is_colliding
-
-        def _is_ground_contact(index: int):
-            return _is_colliding(
-                _extract_polygon(state, index), _extract_polygon(state, terrain_index)
-            )
 
         def _get_obs(walker_idx):
             # hull
@@ -185,7 +183,7 @@ class MultiWalkerEnv(MultiAgentEnv):
             # legs
             legs_on_floor = jnp.array(
                 [
-                    _is_ground_contact(index)
+                    _is_ground_contact(state, terrain_index, index)
                     for index in range(walker_idx * 4, walker_idx * 4 + 4)
                 ]
             )
