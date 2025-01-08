@@ -4,7 +4,17 @@ import imageio
 import jax
 import jax.numpy as jnp
 import numpy as np
-from constants import (
+from flax import struct
+from jax2d.engine import PhysicsEngine, create_empty_sim
+from jax2d.scene import (
+    add_polygon_to_scene,
+    add_rectangle_to_scene,
+    add_revolute_joint_to_scene,
+)
+from jax2d.sim_state import SimParams, SimState, StaticSimParams
+
+from jaxmarl.environments.multi_agent_env import MultiAgentEnv
+from jaxmarl.environments.multiwalker.constants import (
     HULL_POLY,
     LEG_DOWN,
     LEG_H,
@@ -16,15 +26,7 @@ from constants import (
     TERRAIN_STARTPAD,
     TERRAIN_STEP,
 )
-from flax import struct
-from jax2d.engine import PhysicsEngine, create_empty_sim
-from jax2d.scene import (
-    add_polygon_to_scene,
-    add_rectangle_to_scene,
-    add_revolute_joint_to_scene,
-)
-from jax2d.sim_state import SimParams, SimState, StaticSimParams
-from render import make_render_pixels, render_bridge
+from jaxmarl.environments.multiwalker.render import make_render_pixels, render_bridge
 
 os.environ["SDL_VIDEODRIVER"] = "dummy"
 
@@ -279,11 +281,15 @@ class MultiWalkerWorld:
         self.color_table = self.color_table.at[index].set(color)
 
 
+class MultiWalkerEnv(MultiAgentEnv):
+    pass
+
+
 def main():
     screen_dim = (1200, 400)
 
-    # Create engine with default parameters
-    n_walkers = 3
+    # 设定基础参数
+    n_walkers = 2
     n_package = 1
     static_sim_params = MW_StaticSimParams(
         num_polygons=n_walkers * 5 + n_package + 2,
@@ -302,10 +308,6 @@ def main():
     # Step scene
     step_fn = jax.jit(engine.step)
 
-    # pygame.init()
-    # screen_surface = pygame.display.set_mode(screen_dim)
-
-    # gif！
     frames = []
     max_step = 50
     step = 0
@@ -318,10 +320,8 @@ def main():
         # Render
         pixels = render_bridge(world, renderer, step)
         frames.append(pixels.astype(np.uint8))
-        # Update screen
-        # surface = pygame.surfarray.make_surface(np.array(pixels)[:, ::-1])
-        # screen_surface.blit(surface, (0, 0))
-        # pygame.display.flip()
+
+        # step
         step += 1
         if step >= max_step:
             imageio.mimsave("test.gif", frames, fps=20)
