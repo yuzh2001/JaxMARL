@@ -37,13 +37,13 @@ class MW_StaticSimParams(StaticSimParams):
     num_circles: int = 12
     num_joints: int = 12
     num_thrusters: int = 12
-    max_polygon_vertices: int = 4
+    max_polygon_vertices: int = 5
 
     # Compute amount
     num_solver_iterations: int = 10
     solver_batch_size: int = 16
-    do_warm_starting: bool = False
-    num_static_fixated_polys: int = 4
+    do_warm_starting: bool = True
+    num_static_fixated_polys: int = 1
 
 
 @struct.dataclass

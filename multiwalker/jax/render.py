@@ -21,7 +21,7 @@ def make_render_pixels(static_sim_params, screen_dim):
     cleared_screen = clear_screen(full_screen_size, jnp.ones(3) * 200.0)
 
     polygon_shader = add_mask_to_shader(
-        make_fragment_shader_convex_dynamic_ngon_with_edges(4)
+        make_fragment_shader_convex_dynamic_ngon_with_edges(5)
     )
     quad_renderer = make_renderer(
         full_screen_size, polygon_shader, (patch_size_x, patch_size_y), batched=True

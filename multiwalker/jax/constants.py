@@ -13,7 +13,7 @@ LIDAR_RANGE = 160 / SCALE
 INITIAL_RANDOM = 5
 
 # (+34, +1),
-HULL_POLY = [(-30, +9), (+6, +9), (+34, -8), (-30, -8)]
+HULL_POLY = [(-30, +9), (+6, +9), (+34, 1), (+34, -8), (-30, -8)]
 LEG_DOWN = -8 / SCALE
 LEG_W, LEG_H = 8 / SCALE, 34 / SCALE
 
