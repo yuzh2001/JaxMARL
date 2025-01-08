@@ -5,6 +5,7 @@ from typing import Dict, Tuple
 import chex
 import jax
 import jax.numpy as jnp
+from flax.struct import dataclass
 from jax2d.engine import PhysicsEngine, RigidBody
 from jax2d.sim_state import SimState
 
@@ -19,10 +20,16 @@ from .utils import _extract_joint, _extract_polygon, _is_ground_contact
 os.environ["SDL_VIDEODRIVER"] = "dummy"
 
 
+@dataclass
+class StateWithStep:
+    state: SimState
+    step: int
+
+
 class MultiWalkerEnv(MultiAgentEnv):
     def __init__(
         self,
-        n_walkers: int = 2,
+        n_walkers: int = 3,
         position_noise=1e-3,
         angle_noise=1e-3,
     ):
@@ -79,19 +86,23 @@ class MultiWalkerEnv(MultiAgentEnv):
         }
 
     @partial(jax.jit, static_argnums=(0,))
-    def reset(self, key: chex.PRNGKey) -> Tuple[Dict[str, chex.Array], SimState]:
+    def reset(self, key: chex.PRNGKey) -> Tuple[Dict[str, chex.Array], StateWithStep]:
         state = self.env.reset()
-        return self.get_obs(state), state
+        state_with_step = StateWithStep(state=state, step=0)
+        return self.get_obs(state_with_step), state_with_step
 
     @partial(jax.jit, static_argnums=(0,))
     def step_env(
         self,
         key: chex.PRNGKey,
-        state: SimState,
+        state: StateWithStep,
         actions: Dict[str, chex.Array],
     ) -> Tuple[
-        Dict[str, chex.Array], SimState, Dict[str, float], Dict[str, bool], Dict
+        Dict[str, chex.Array], StateWithStep, Dict[str, float], Dict[str, bool], Dict
     ]:
+        step = state.step
+        state = state.state
+
         # 环境步进
         actions_as_array = jnp.array(
             [actions[agent] for agent in self.agents]
@@ -102,7 +113,8 @@ class MultiWalkerEnv(MultiAgentEnv):
         next_state, _ = self.step_fn(state, self.sim_params, actions_as_array)
         next_state: SimState = next_state
         # 获取观测
-        observations = self.get_obs(next_state)
+        next_state_with_step = StateWithStep(state=next_state, step=step + 1)
+        observations = self.get_obs(next_state_with_step)
 
         def _calculate_reward():
             """
@@ -118,12 +130,13 @@ class MultiWalkerEnv(MultiAgentEnv):
                 jnp.array([5 * i + 3 for i in range(self.n_walkers)])
             )
             forward_reward = (
-                next_state.polygon.position[self.package_index][0] - package_initial_x
+                next_state.polygon.position[self.package_index][0]
+                - state.polygon.position[self.package_index][0]
             ) * 1.0
             overall_reward += forward_reward
 
             package_contact_ground = _is_ground_contact(
-                state, self.terrain_index, self.package_index
+                next_state, self.terrain_index, self.package_index
             )
             package_contact_ground_reward = -100.0 * package_contact_ground
             overall_reward += package_contact_ground_reward
@@ -131,7 +144,7 @@ class MultiWalkerEnv(MultiAgentEnv):
 
             for i in range(self.n_walkers):
                 walker_contact_ground = _is_ground_contact(
-                    state, self.terrain_index, i * 5
+                    next_state, self.terrain_index, i * 5
                 )
                 walker_contact_ground_reward = -10.0 * walker_contact_ground
                 overall_reward += walker_contact_ground_reward
@@ -149,18 +162,21 @@ class MultiWalkerEnv(MultiAgentEnv):
         rewards["__all__"] = rwd
 
         # 计算终止
+        done = done | jnp.where(step > 500, True, False)
         dones = {agent: done for agent in self.agents}
         dones["__all__"] = done
 
         return (
             observations,
-            next_state,  # type: ignore
+            next_state_with_step,  # type: ignore
             rewards,
             dones,
             {},
         )
 
-    def get_obs(self, state: SimState) -> Dict[str, chex.Array]:
+    def get_obs(self, state: StateWithStep) -> Dict[str, chex.Array]:
+        step = state.step
+        state = state.state
         # 通过取出self.env里存放的walker里的对应index，从state里取出观测
         package_index = self.n_walkers * 5 + 1
         terrain_index = self.n_walkers * 5
