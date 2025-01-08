@@ -223,7 +223,8 @@ class MultiWalkerWorld:
         self.package_index = None
 
     def _generate_walkers(self):
-        self.start_x = jnp.array([3 * i + 5 for i in range(self._n_walkers)])
+        self.start_x = jnp.array([5 * i + 3 for i in range(self._n_walkers)])
+        jax.debug.print("start_x: {x}", x=self.start_x)
         for i in range(self._n_walkers):
             walker = BipedalWalker(
                 self,
@@ -283,11 +284,17 @@ def main():
     screen_dim = (1200, 400)
 
     # Create engine with default parameters
-    static_sim_params = MW_StaticSimParams()
+    n_walkers = 3
+    n_package = 1
+    static_sim_params = MW_StaticSimParams(
+        num_polygons=n_walkers * 5 + n_package + 2,
+        num_thrusters=n_walkers * 1,
+        num_joints=n_walkers * 4,
+    )
     sim_params = MW_SimParams()
     engine = PhysicsEngine(static_sim_params)
 
-    world = MultiWalkerWorld(sim_params, static_sim_params)
+    world = MultiWalkerWorld(sim_params, static_sim_params, n_walkers=n_walkers)
     world.reset()
 
     # Renderer
@@ -318,7 +325,7 @@ def main():
         pygame.display.flip()
         step += 1
         if step >= max_step:
-            imageio.mimsave("test.gif", frames, fps=10)
+            imageio.mimsave("test.gif", frames, fps=20)
             return True
 
 

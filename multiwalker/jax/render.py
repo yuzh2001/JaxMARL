@@ -58,15 +58,15 @@ def make_render_pixels(static_sim_params, screen_dim):
         )
 
         # calculate patch positions
-        jax.debug.print("state.polygon.position: {x}", x=state.polygon.position)
         rect_positions_pixel_space = _world_space_to_pixel_spacestep(
             state.polygon.position
         )
-        jax.debug.print("rect_positions_pixel_space: {x}", x=rect_positions_pixel_space)
         rect_patch_positions = (rect_positions_pixel_space - 100 / 2).astype(jnp.int32)
-        jax.debug.print("rect_patch_positions: {x}", x=rect_patch_positions)
         rect_patch_positions = jnp.maximum(rect_patch_positions, 0)
-        jax.debug.print("rect_patch_positions max: {x}", x=rect_patch_positions)
+        # jax.debug.print("state.polygon.position: {x}", x=state.polygon.position)
+        # jax.debug.print("rect_positions_pixel_space: {x}", x=rect_positions_pixel_space)
+        # jax.debug.print("rect_patch_positions: {x}", x=rect_patch_positions)
+        # jax.debug.print("rect_patch_positions max: {x}", x=rect_patch_positions)
 
         rect_colours = jnp.array(
             [color_table[idx] for idx in range(static_sim_params.num_polygons)]
