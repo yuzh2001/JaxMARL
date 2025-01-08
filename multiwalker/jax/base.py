@@ -4,7 +4,6 @@ import imageio
 import jax
 import jax.numpy as jnp
 import numpy as np
-import pygame
 from constants import (
     HULL_POLY,
     LEG_DOWN,
@@ -303,8 +302,8 @@ def main():
     # Step scene
     step_fn = jax.jit(engine.step)
 
-    pygame.init()
-    screen_surface = pygame.display.set_mode(screen_dim)
+    # pygame.init()
+    # screen_surface = pygame.display.set_mode(screen_dim)
 
     # gif！
     frames = []
@@ -320,9 +319,9 @@ def main():
         pixels = render_bridge(world, renderer, step)
         frames.append(pixels.astype(np.uint8))
         # Update screen
-        surface = pygame.surfarray.make_surface(np.array(pixels)[:, ::-1])
-        screen_surface.blit(surface, (0, 0))
-        pygame.display.flip()
+        # surface = pygame.surfarray.make_surface(np.array(pixels)[:, ::-1])
+        # screen_surface.blit(surface, (0, 0))
+        # pygame.display.flip()
         step += 1
         if step >= max_step:
             imageio.mimsave("test.gif", frames, fps=20)

@@ -79,3 +79,6 @@ dev = [
 [[tool.uv.index]]
 url = "https://pypi.cstcloud.cn/simple"
 default = true
+
+[tool.taskipy.tasks]
+run_mw = "uv run multiwalker/jax/base.py"
