@@ -112,7 +112,7 @@ class BipedalWalker:
 
         # add a hull
         hull_vertices = jnp.array([[x / SCALE, y / SCALE] for x, y in HULL_POLY])
-        scene, (_, hull_index) = add_polygon_to_scene(
+        scene, (_, self.hull_index) = add_polygon_to_scene(
             scene,
             self.static_sim_params,
             position=jnp.array([init_x, init_y]),
@@ -122,8 +122,7 @@ class BipedalWalker:
             friction=1,
             restitution=0.0,
         )
-        self.hull_index = hull_index
-        self.world.change_color(hull_index, MW_COLORS["hull"][0])
+        self.world.change_color(self.hull_index, MW_COLORS["hull"][0])
 
         # add the legs
         self.leg_indexes = []
@@ -189,17 +188,6 @@ class BipedalWalker:
             else:
                 self.world.change_color(leg_index, MW_COLORS["leg:R"][0])
                 self.world.change_color(leg_lower_index, MW_COLORS["leg:R"][0])
-
-        # class LidarCallback(Box2D.b2.rayCastCallback):
-        #     def ReportFixture(self, fixture, point, normal, fraction):
-        #         if (fixture.filterData.categoryBits & 1) == 0:
-        #             return -1
-        #         self.p2 = point
-        #         self.fraction = fraction
-        #         return fraction
-
-        # self.lidar = [LidarCallback() for _ in range(10)]
-
         return scene
 
     def setup(self, scene: SimState):

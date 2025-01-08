@@ -8,7 +8,8 @@
     "test": "tests"
   },
   "scripts": {
-    "multiwalker_env_test": "uv run multiwalker/jax/base.py"
+    "mw_base": "uv run jaxmarl/environments/multiwalker/base.py",
+    "mw_env": "uv run jaxmarl/environments/multiwalker/multiwalker_env.py"
   },
   "author": "",
   "license": "ISC"

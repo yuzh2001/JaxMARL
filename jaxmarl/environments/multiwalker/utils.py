@@ -1,8 +1,10 @@
+from jax import jit
 from jax2d.engine import Joint, RigidBody
 from jax2d.sim_state import SimState
 
 
-def _extract_polygon(state: SimState, index: int) -> RigidBody:
+@jit
+def _extract_polygon(state: SimState, index) -> RigidBody:
     position = state.polygon.position[index]
     rotation = state.polygon.rotation[index]
     velocity = state.polygon.velocity[index]
@@ -33,7 +35,8 @@ def _extract_polygon(state: SimState, index: int) -> RigidBody:
     )
 
 
-def _extract_joint(state: SimState, index: int) -> Joint:
+@jit
+def _extract_joint(state: SimState, index) -> Joint:
     a_index = state.joint.a_index[index]
     b_index = state.joint.b_index[index]
     a_relative_pos = state.joint.a_relative_pos[index]

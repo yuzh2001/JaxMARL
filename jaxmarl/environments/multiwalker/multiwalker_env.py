@@ -1,6 +1,6 @@
 import os
 from functools import partial
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import chex
 import jax
@@ -12,7 +12,6 @@ from jax2d.sim_state import SimState
 from jaxmarl.environments import spaces
 from jaxmarl.environments.multi_agent_env import MultiAgentEnv
 from jaxmarl.environments.multiwalker import (
-    BipedalWalker,
     MultiWalkerWorld,
     _extract_joint,
     _extract_polygon,
@@ -44,7 +43,7 @@ class MultiWalkerEnv(MultiAgentEnv):
         self.static_sim_params = MW_StaticSimParams(
             num_polygons=n_walkers * 5 + 1 + 2,
             num_circles=2,
-            num_thrusters=n_walkers * 1,
+            num_thrusters=2,
             num_joints=n_walkers * 4,
         )
         self.sim_params = MW_SimParams()
@@ -86,17 +85,53 @@ class MultiWalkerEnv(MultiAgentEnv):
         return self.get_obs(state), state
 
     @partial(jax.jit, static_argnums=(0,))
+    def step(
+        self,
+        key: chex.PRNGKey,
+        state: SimState,
+        actions: Dict[str, chex.Array],
+        reset_state: Optional[SimState] = None,
+    ) -> Tuple[
+        Dict[str, chex.Array], SimState, Dict[str, float], Dict[str, bool], Dict
+    ]:
+        """Performs step transitions in the environment. Resets the environment if done.
+        To control the reset state, pass `reset_state`. Otherwise, the environment will reset randomly."""
+
+        key, key_reset = jax.random.split(key)
+        obs_st, states_st, rewards, dones, infos = self.step_env(key, state, actions)
+
+        if reset_state is None:
+            obs_re, states_re = self.reset(key_reset)
+        else:
+            states_re = reset_state
+            obs_re = self.get_obs(states_re)
+
+        # Auto-reset environment based on termination
+        states = jax.tree.map(
+            lambda x, y: jax.lax.select(dones["__all__"], x, y), states_re, states_st
+        )
+        obs = jax.tree.map(
+            lambda x, y: jax.lax.select(dones["__all__"], x, y), obs_re, obs_st
+        )
+        return obs, states, rewards, dones, infos
+
+    @partial(jax.jit, static_argnums=(0,))
     def step_env(
         self,
+        key: chex.PRNGKey,
         state: SimState,
         actions: Dict[str, chex.Array],
     ) -> Tuple[
         Dict[str, chex.Array], SimState, Dict[str, float], Dict[str, bool], Dict
     ]:
+        print("环境在此步进")
         # 环境步进
         actions_as_array = jnp.array(
             [actions[agent] for agent in self.agents]
         ).flatten()
+        actions_as_array = jnp.concatenate(
+            [actions_as_array, jnp.zeros(self.static_sim_params.num_thrusters)]
+        )
         next_state, _ = self.step_fn(state, self.sim_params, actions_as_array)
 
         # 获取观测
@@ -120,10 +155,9 @@ class MultiWalkerEnv(MultiAgentEnv):
     def get_obs(self, state: SimState) -> Dict[str, chex.Array]:
         # 通过取出self.env里存放的walker里的对应index，从state里取出观测
 
-        world = self.env
-        walkers = world.walkers
-        package_index = world.package_index
-        terrain_index = world.terrain_index
+        walkers = self.env.walkers
+        package_index = self.n_walkers * 5 + 1
+        terrain_index = self.n_walkers * 5
 
         def _is_colliding(a: RigidBody, b: RigidBody):
             # Find axes of least penetration
@@ -138,44 +172,23 @@ class MultiWalkerEnv(MultiAgentEnv):
                 _extract_polygon(state, index), _extract_polygon(state, terrain_index)
             )
 
-        def _get_obs(walker: BipedalWalker):
-            """reference:
-            state = [
-                # Normal angles up to 0.5 here, but sure more is possible.
-                self.hull.angle,
-                2.0 * self.hull.angularVelocity / FPS,
-                # Normalized to get -1..1 range
-                0.3 * vel.x * (VIEWPORT_W / SCALE) / FPS,
-                0.3 * vel.y * (VIEWPORT_H / SCALE) / FPS,
-                # This will give 1.1 on high up, but it's still OK (and there should be spikes on hiting the ground, that's normal too)
-                self.joints[0].angle,
-                self.joints[0].speed / SPEED_HIP,
-                self.joints[1].angle + 1.0,
-                self.joints[1].speed / SPEED_KNEE,
-                1.0 if self.legs[1].ground_contact else 0.0,
-                self.joints[2].angle,
-                self.joints[2].speed / SPEED_HIP,
-                self.joints[3].angle + 1.0,
-                self.joints[3].speed / SPEED_KNEE,
-                1.0 if self.legs[3].ground_contact else 0.0,
-            ]
-            """
+        def _get_obs(walker_idx):
             # hull
-            hull_index = walker.hull_index
+            hull_index = walker_idx * 5
             hull_state: RigidBody = _extract_polygon(state, hull_index)
-            hull_on_floor = _is_ground_contact(hull_index)
 
             # joints
             joint_states = [
-                _extract_joint(state, index) for index in walker.joint_indexes
+                _extract_joint(state, index)
+                for index in range(walker_idx * 4, walker_idx * 4 + 4)
             ]
             # legs
             legs_on_floor = jnp.array(
-                [_is_ground_contact(index) for index in walker.leg_indexes]
+                [
+                    _is_ground_contact(index)
+                    for index in range(walker_idx * 4, walker_idx * 4 + 4)
+                ]
             )
-            # package on floor
-            package_state = _extract_polygon(state, package_index)
-            package_on_floor = _is_ground_contact(package_index)
 
             full_obs = jnp.array(
                 [
@@ -200,22 +213,22 @@ class MultiWalkerEnv(MultiAgentEnv):
             return full_obs
 
         agent_obs = {
-            agent: _get_obs(walker) for agent, walker in zip(self.agents, walkers)
+            agent: _get_obs(i) for agent, i in zip(self.agents, range(self.n_walkers))
         }
 
         # 获取邻居观测
         for i in range(self.n_walkers):
             neighbor_obs = []
-            x = _extract_polygon(state, walkers[i].hull_index).position[0]
-            y = _extract_polygon(state, walkers[i].hull_index).position[1]
+            x = _extract_polygon(state, i * 5).position[0]
+            y = _extract_polygon(state, i * 5).position[1]
             for j in [i - 1, i + 1]:
                 # if no neighbor (for edge walkers)
                 if j < 0 or j == self.n_walkers:
                     neighbor_obs.append(0.0)
                     neighbor_obs.append(0.0)
                 else:
-                    xm = _extract_polygon(state, walkers[j].hull_index).position[0] - x
-                    ym = _extract_polygon(state, walkers[j].hull_index).position[1] - y
+                    xm = _extract_polygon(state, j * 5).position[0] - x
+                    ym = _extract_polygon(state, j * 5).position[1] - y
                     xm = xm / self.package_length
                     ym = ym / self.package_length
                     neighbor_obs.append(
