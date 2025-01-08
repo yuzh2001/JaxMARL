@@ -11,6 +11,7 @@ from constants import (
     LEG_H,
     LEG_W,
     MW_COLORS,
+    PACKAGE_POLY,
     SCALE,
     TERRAIN_HEIGHT,
     TERRAIN_STARTPAD,
@@ -81,7 +82,7 @@ class BipedalWalker:
         world,
         static_sim_params: StaticSimParams,
         init_x=TERRAIN_STEP * TERRAIN_STARTPAD / 2,
-        init_y=TERRAIN_HEIGHT / 2 + 2 * LEG_H,
+        init_y=TERRAIN_HEIGHT + 2 * LEG_H,
         n_walkers=3,
         seed=None,
     ):
@@ -219,6 +220,7 @@ class MultiWalkerWorld:
         self.color_table = jnp.ones((self.static_sim_params.num_polygons, 3))
 
         self.walkers: list[BipedalWalker] = []
+        self.package_index = None
 
     def reset(self):
         self.color_table = jnp.ones((self.static_sim_params.num_polygons, 3))
@@ -229,11 +231,12 @@ class MultiWalkerWorld:
         )
 
         ## setup walkers
+        start_x = jnp.array([3 * i + 5 for i in range(self._n_walkers)])
         for i in range(self._n_walkers):
             walker = BipedalWalker(
                 self,
                 self.static_sim_params,
-                init_x=(3 * i + 2),
+                init_x=start_x[i],
             )
             self.scene = walker.setup(self.scene)
             self.walkers.append(walker)
@@ -243,11 +246,28 @@ class MultiWalkerWorld:
             self.scene,
             self.static_sim_params,
             position=jnp.array([0, 0]),
-            dimensions=jnp.array([200, 1]),
+            dimensions=jnp.array([200, TERRAIN_HEIGHT]),
             density=1.0,
             restitution=0.0,
             friction=1.0,
             fixated=True,
+        )
+
+        ## generate package
+        package_x = jnp.mean(start_x)
+        package_y = TERRAIN_HEIGHT + 3 * LEG_H
+        package_scale = self._n_walkers / 1.75
+        self.scene, (_, self.package_index) = add_polygon_to_scene(
+            self.scene,
+            self.static_sim_params,
+            position=jnp.array([package_x, package_y]),
+            vertices=jnp.array(
+                [(x * package_scale / SCALE, y / SCALE) for x, y in PACKAGE_POLY]
+            ),
+            n_vertices=len(PACKAGE_POLY),
+            density=1.0,
+            restitution=0.0,
+            friction=0.5,
         )
 
         return self.scene
