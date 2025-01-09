@@ -12,12 +12,19 @@ from jax2d.sim_state import SimState
 
 from jaxmarl.environments import spaces
 from jaxmarl.environments.multi_agent_env import MultiAgentEnv
+from jaxmarl.environments.multiwalker.base import (
+    MultiWalkerWorld,
+    MW_SimParams,
+    MW_StaticSimParams,
+)
+from jaxmarl.environments.multiwalker.constants import PACKAGE_LENGTH, SCALE
+from jaxmarl.environments.multiwalker.render import make_render_pixels, render_bridge
+from jaxmarl.environments.multiwalker.utils import (
+    _extract_joint,
+    _extract_polygon,
+    _is_ground_contact,
+)
 from jaxmarl.wrappers.baselines import LogWrapper
-
-from .base import MultiWalkerWorld, MW_SimParams, MW_StaticSimParams
-from .constants import PACKAGE_LENGTH, SCALE
-from .render import make_render_pixels, render_bridge
-from .utils import _extract_joint, _extract_polygon, _is_ground_contact
 
 os.environ["SDL_VIDEODRIVER"] = "dummy"
 
@@ -149,8 +156,9 @@ class MultiWalkerEnv(MultiAgentEnv):
                 overall_reward += walker_contact_ground_reward
                 done = done | walker_contact_ground
 
-                hull_angle_change = next_state.polygon.rotation[i * 5]
-                hull_angle_change_reward = -5.0 * jnp.abs(hull_angle_change)
+                hull_angle_change_reward = -5.0 * jnp.abs(
+                    next_state.polygon.rotation[i * 5]
+                ) + 5.0 * jnp.abs(state.polygon.rotation[i * 5])
                 overall_reward += hull_angle_change_reward
 
             return overall_reward, done
@@ -290,6 +298,7 @@ def main():
 
     # Reset the environment.
     obs, state = env.reset(key_reset)
+    jax.debug.print("{s}", s=obs)
 
     # Sample random actions.
     key_act = jax.random.split(key_act, env.num_agents)
