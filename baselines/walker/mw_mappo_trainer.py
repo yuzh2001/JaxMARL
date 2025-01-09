@@ -19,6 +19,7 @@ from flax.training.train_state import TrainState
 from flax.traverse_util import flatten_dict
 from omegaconf import OmegaConf
 from safetensors.flax import save_file
+from tqdm import tqdm
 
 import wandb
 from jaxmarl import make
@@ -280,6 +281,8 @@ def make_train(config):
         cr_init_hstate = ScannedRNN.initialize_carry(
             config["NUM_ACTORS"], config["GRU_HIDDEN_DIM"]
         )
+
+        pbar = tqdm(total=config["NUM_UPDATES"])
 
         # TRAIN LOOP
         def _update_step(update_runner_state, unused):
@@ -582,6 +585,7 @@ def make_train(config):
             jax.experimental.io_callback(callback, None, metric)
             update_steps = update_steps + 1
             runner_state = (train_states, env_state, last_obs, last_done, hstates, rng)
+            pbar.update(1)
             return (runner_state, update_steps), metric
 
         rng, _rng = jax.random.split(rng)

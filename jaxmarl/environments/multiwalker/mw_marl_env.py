@@ -135,38 +135,44 @@ class MultiWalkerEnv(MultiAgentEnv):
             done = False
             overall_reward = 0.0
 
+            # forward
             forward_reward = (
                 next_state.polygon.position[self.package_index][0]
                 - state.polygon.position[self.package_index][0]
-            ) * 1.0
+            ) * 4.0
             overall_reward += forward_reward
 
-            package_contact_ground = _is_ground_contact(
-                next_state, self.terrain_index, self.package_index
-            )
-            package_contact_ground_reward = -100.0 * package_contact_ground
-            overall_reward += package_contact_ground_reward
-            done = done | package_contact_ground
-
+            agents_reward = jnp.zeros(self.n_walkers)
             for i in range(self.n_walkers):
+                agent_reward = 0.0
+                # walker contact ground
                 walker_contact_ground = _is_ground_contact(
                     next_state, self.terrain_index, i * 5
                 )
                 walker_contact_ground_reward = -10.0 * walker_contact_ground
-                overall_reward += walker_contact_ground_reward
+                agent_reward += walker_contact_ground_reward
                 done = done | walker_contact_ground
 
+                # hull angle change
                 hull_angle_change_reward = -5.0 * jnp.abs(
                     next_state.polygon.rotation[i * 5]
                 ) + 5.0 * jnp.abs(state.polygon.rotation[i * 5])
-                overall_reward += hull_angle_change_reward
+                agent_reward += hull_angle_change_reward
+                agents_reward = agents_reward.at[i].set(agent_reward)
 
+            # package contact ground
+            package_contact_ground = _is_ground_contact(
+                next_state, self.terrain_index, self.package_index
+            )
+            done = done | package_contact_ground
+            overall_reward += -100.0 * done
+            overall_reward += jnp.mean(agents_reward)
             return overall_reward, done
 
         # 计算奖励
         rwd, done = _calculate_reward()
         rewards = {agent: rwd for agent in self.agents}
-        rewards["__all__"] = rwd
+        rewards["__all__"] = rwd * 3
 
         # 计算终止
         done = done | jnp.where(step > 500, True, False)
