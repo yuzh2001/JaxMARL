@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from omegaconf import OmegaConf
+from tqdm import trange
 
 from baselines.MAPPO.mappo_rnn_walker import ActorRNN, ScannedRNN
 from jaxmarl.environments.multiwalker.multiwalker_env import MultiWalkerEnv
@@ -52,10 +53,9 @@ def main(config):
     last_done = jnp.zeros((config["NUM_ACTORS"]), dtype=bool)
     rng = jax.random.PRNGKey(0)
     frames = []
-    for step in range(max_step):
+    for step in trange(max_step):
         rng, _rng = jax.random.split(rng)
         obs_batch = batchify(last_obs, env.agents, config["NUM_ACTORS"])
-        print("obs_batch", obs_batch.shape)
         ac_in = (
             obs_batch[np.newaxis, :],
             last_done[np.newaxis, :],
@@ -66,8 +66,13 @@ def main(config):
         env_act = unbatchify(action, env.agents, config["NUM_ENVS"], env.num_agents)
 
         # Perform the step transition.
-        last_obs, state, reward, last_done, infos = env.step(key_step, state, env_act)
+        last_obs, state, reward, done, infos = env.step(key_step, state, env_act)
+        last_done = batchify(done, env.agents, config["NUM_ACTORS"]).squeeze()
+
         frames.append(env.render(state, step))
+
+        if done["__all__"]:
+            break
 
     imageio.mimsave("test.gif", frames, fps=20)
 

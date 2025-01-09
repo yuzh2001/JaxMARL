@@ -86,10 +86,10 @@ def make_render_pixels(static_sim_params, screen_dim):
         rect_patch_positions = (rect_positions_pixel_space - 100 / 2).astype(jnp.int32)
         rect_patch_positions = jnp.maximum(rect_patch_positions, 0)
         # jax.debug.print("state.collision_matrix: {x}", x=state.acc_rr_manifolds.active)
-        jax.debug.print(
-            "state.collision_matrix:collision_point: {x}",
-            x=state.acc_rr_manifolds.penetration[0],
-        )
+        # jax.debug.print(
+        #     "state.collision_matrix:collision_point: {x}",
+        #     x=state.acc_rr_manifolds.penetration[0],
+        # )
         # jax.debug.print("state.polygon.position[0]: {x}", x=state.polygon.position[0])
         # jax.debug.print("state.polygon.rotation: {x}", x=state.polygon.rotation)
         # jax.debug.print("state.polygon.velocity: {x}", x=state.polygon.velocity)
