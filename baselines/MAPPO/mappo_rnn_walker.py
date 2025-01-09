@@ -14,15 +14,15 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-import wandb
 from flax.linen.initializers import constant, orthogonal
 from flax.training.train_state import TrainState
 from flax.traverse_util import flatten_dict
-from jax2d.sim_state import SimState
 from omegaconf import OmegaConf
 from safetensors.flax import save_file
 
+import wandb
 from jaxmarl import make
+from jaxmarl.environments.multiwalker.multiwalker_env import StateWithStep
 from jaxmarl.wrappers.baselines import JaxMARLWrapper, LogWrapper
 
 
@@ -40,7 +40,8 @@ class MultiWalkerWorldStateWrapper(JaxMARLWrapper):
         return obs, env_state, reward, done, info
 
     @partial(jax.jit, static_argnums=0)
-    def world_state(self, obs, env_state: SimState):
+    def world_state(self, obs, env_state: StateWithStep):
+        env_state = env_state.state
         package_index = self._env.num_agents * 5 + 1
         package_obs = jnp.array(
             [
@@ -114,12 +115,13 @@ class ActorRNN(nn.Module):
             bias_init=constant(0.0),
         )(embedding)
         actor_mean = nn.relu(actor_mean)
-        print(self.action_dim)
-        action_logits = nn.Dense(
+        actor_mean = nn.Dense(
             self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
         )(actor_mean)
 
-        pi = distrax.Categorical(logits=action_logits)
+        actor_logtstd = self.param("log_std", nn.initializers.zeros, (self.action_dim,))
+        pi = distrax.MultivariateNormalDiag(actor_mean, jnp.exp(actor_logtstd))
+        # pi = distrax.Categorical(logits=action_logits)
 
         return hidden, pi
 
@@ -602,11 +604,12 @@ def make_train(config):
 def main(config):
     config = OmegaConf.to_container(config)
     run = wandb.init(
-        entity=config["ENTITY"],
+        # entity=config["ENTITY"],
         project=config["PROJECT"],
         tags=["MAPPO", "RNN", config["ENV_NAME"]],
         config=config,
         mode=config["WANDB_MODE"],
+        save_code=True,
     )
     rng = jax.random.PRNGKey(config["SEED"])
     with jax.disable_jit(False):

@@ -11,6 +11,7 @@ from jax2d.sim_state import SimState
 
 from jaxmarl.environments import spaces
 from jaxmarl.environments.multi_agent_env import MultiAgentEnv
+from jaxmarl.wrappers.baselines import LogWrapper
 
 from .base import MultiWalkerWorld, MW_SimParams, MW_StaticSimParams
 from .constants import PACKAGE_LENGTH, SCALE
@@ -126,9 +127,9 @@ class MultiWalkerEnv(MultiAgentEnv):
             done = False
             overall_reward = 0.0
 
-            package_initial_x = jnp.mean(
-                jnp.array([5 * i + 3 for i in range(self.n_walkers)])
-            )
+            # package_initial_x = jnp.mean(
+            #     jnp.array([5 * i + 3 for i in range(self.n_walkers)])
+            # )
             forward_reward = (
                 next_state.polygon.position[self.package_index][0]
                 - state.polygon.position[self.package_index][0]
@@ -166,12 +167,13 @@ class MultiWalkerEnv(MultiAgentEnv):
         dones = {agent: done for agent in self.agents}
         dones["__all__"] = done
 
+        info = {}
         return (
             observations,
             next_state_with_step,  # type: ignore
             rewards,
             dones,
-            {},
+            info,
         )
 
     def get_obs(self, state: StateWithStep) -> Dict[str, chex.Array]:
@@ -270,6 +272,11 @@ class MultiWalkerEnv(MultiAgentEnv):
 
     def render(self, state: SimState):
         self.renderer = make_render_pixels(self.static_sim_params, self.screen_dim)
+
+
+class MultiWalkerLogWrapper(LogWrapper):
+    def __init__(self, env: MultiWalkerEnv, replace_info: bool = True):
+        super().__init__(env, replace_info)
 
 
 def main():
