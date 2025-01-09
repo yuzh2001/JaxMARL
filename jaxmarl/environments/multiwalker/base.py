@@ -122,7 +122,9 @@ class BipedalWalker:
             friction=1,
             restitution=0.0,
         )
-        self.world.change_color(self.hull_index, MW_COLORS["hull"][0])
+        self.world.color_table = self.world.change_color(
+            self.hull_index, MW_COLORS["hull"][0]
+        )
 
         # add the legs
         self.leg_indexes = []
@@ -183,11 +185,19 @@ class BipedalWalker:
             self.joint_indexes.append(leg_lower_joint_index)
 
             if i == -1:
-                self.world.change_color(leg_index, MW_COLORS["leg:L"][0])
-                self.world.change_color(leg_lower_index, MW_COLORS["leg:L"][0])
+                self.world.color_table = self.world.change_color(
+                    leg_index, MW_COLORS["leg:L"][0]
+                )
+                self.world.color_table = self.world.change_color(
+                    leg_lower_index, MW_COLORS["leg:L"][0]
+                )
             else:
-                self.world.change_color(leg_index, MW_COLORS["leg:R"][0])
-                self.world.change_color(leg_lower_index, MW_COLORS["leg:R"][0])
+                self.world.color_table = self.world.change_color(
+                    leg_index, MW_COLORS["leg:R"][0]
+                )
+                self.world.color_table = self.world.change_color(
+                    leg_lower_index, MW_COLORS["leg:R"][0]
+                )
         return scene
 
     def setup(self, scene: SimState):
@@ -205,7 +215,7 @@ class MultiWalkerWorld:
         self.sim_params = sim_params
         self.scene: SimState = None
         self._n_walkers = n_walkers
-        self.color_table = jnp.ones((self.static_sim_params.num_polygons, 3))
+        self.color_table = np.ones((self.static_sim_params.num_polygons, 3))
 
         self.walkers: list[BipedalWalker] = []
         self.package_index = None
@@ -251,7 +261,7 @@ class MultiWalkerWorld:
         )
 
     def reset(self) -> SimState:
-        self.color_table = jnp.ones((self.static_sim_params.num_polygons, 3))
+        self.color_table = np.ones((self.static_sim_params.num_polygons, 3))
         self.scene = create_empty_sim(
             self.static_sim_params,
             add_floor=False,
@@ -264,7 +274,14 @@ class MultiWalkerWorld:
         return self.scene
 
     def change_color(self, index, color):
-        self.color_table = self.color_table.at[index].set(color)
+        self.color_table[index] = color
+        return self.color_table
+
+    def get_color_table(self):
+        return self.color_table
+
+    def get_state(self):
+        return self.scene
 
 
 def main():

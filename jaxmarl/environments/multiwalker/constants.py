@@ -1,4 +1,4 @@
-import jax.numpy as jnp
+import numpy as np
 
 MAX_AGENTS = 40
 
@@ -34,7 +34,7 @@ FRICTION = 2.5
 WALKER_SEPERATION = 10  # in steps
 
 MW_COLORS = {
-    "hull": [jnp.array([127, 51, 229]), jnp.array([76, 76, 127])],
-    "leg:L": [jnp.array([178, 101, 152]), jnp.array([127, 76, 101])],
-    "leg:R": [jnp.array([153, 76, 127]), jnp.array([102, 51, 76])],
+    "hull": [np.array([127, 51, 229]), np.array([76, 76, 127])],
+    "leg:L": [np.array([178, 101, 152]), np.array([127, 76, 101])],
+    "leg:R": [np.array([153, 76, 127]), np.array([102, 51, 76])],
 }

@@ -5,6 +5,7 @@ from typing import Dict, Tuple
 import chex
 import jax
 import jax.numpy as jnp
+import numpy as np
 from flax.struct import dataclass
 from jax2d.engine import PhysicsEngine, RigidBody
 from jax2d.sim_state import SimState
@@ -15,7 +16,7 @@ from jaxmarl.wrappers.baselines import LogWrapper
 
 from .base import MultiWalkerWorld, MW_SimParams, MW_StaticSimParams
 from .constants import PACKAGE_LENGTH, SCALE
-from .render import make_render_pixels
+from .render import make_render_pixels, render_bridge
 from .utils import _extract_joint, _extract_polygon, _is_ground_contact
 
 os.environ["SDL_VIDEODRIVER"] = "dummy"
@@ -270,8 +271,12 @@ class MultiWalkerEnv(MultiAgentEnv):
 
         return agent_obs
 
-    def render(self, state: SimState):
+    def render(self, state: StateWithStep, step: int):
         self.renderer = make_render_pixels(self.static_sim_params, self.screen_dim)
+        pixels = render_bridge(self.env, state.state, self.renderer, step).astype(
+            np.uint8
+        )
+        return pixels
 
 
 class MultiWalkerLogWrapper(LogWrapper):

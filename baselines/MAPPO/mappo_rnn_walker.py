@@ -107,6 +107,9 @@ class ActorRNN(nn.Module):
         embedding = nn.relu(embedding)
 
         rnn_in = (embedding, dones)
+        # print("embedding", embedding.shape)
+        # print("dones", dones.shape)
+        # print("hidden", hidden.shape)
         hidden, embedding = ScannedRNN()(hidden, rnn_in)
 
         actor_mean = nn.Dense(
@@ -205,7 +208,6 @@ def make_train(config):
 
     def train(rng):
         # INIT NETWORK
-        print(env.action_space(env.agents[0]).shape[0])
         actor_network = ActorRNN(
             env.action_space(env.agents[0]).shape[0], config=config
         )

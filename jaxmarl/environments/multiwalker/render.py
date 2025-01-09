@@ -97,5 +97,6 @@ def make_render_pixels(static_sim_params, screen_dim):
     return render_pixels
 
 
-def render_bridge(world, renderer, step):
-    return renderer(world.scene, world.color_table, step)
+def render_bridge(world, state, renderer, step):
+    color_table = world.get_color_table()
+    return renderer(state, color_table, step)
