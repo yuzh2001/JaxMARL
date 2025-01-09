@@ -128,9 +128,6 @@ class MultiWalkerEnv(MultiAgentEnv):
             done = False
             overall_reward = 0.0
 
-            # package_initial_x = jnp.mean(
-            #     jnp.array([5 * i + 3 for i in range(self.n_walkers)])
-            # )
             forward_reward = (
                 next_state.polygon.position[self.package_index][0]
                 - state.polygon.position[self.package_index][0]
@@ -153,14 +150,14 @@ class MultiWalkerEnv(MultiAgentEnv):
                 done = done | walker_contact_ground
 
                 hull_angle_change = next_state.polygon.rotation[i * 5]
-                hull_angle_change_reward = -5.0 * hull_angle_change
+                hull_angle_change_reward = -5.0 * jnp.abs(hull_angle_change)
                 overall_reward += hull_angle_change_reward
 
             return overall_reward, done
 
         # 计算奖励
         rwd, done = _calculate_reward()
-        rewards = {agent: rwd / self.n_walkers for agent in self.agents}
+        rewards = {agent: rwd for agent in self.agents}
         rewards["__all__"] = rwd
 
         # 计算终止

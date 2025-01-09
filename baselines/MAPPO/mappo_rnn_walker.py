@@ -574,6 +574,7 @@ def make_train(config):
                         * config["NUM_ENVS"]
                         * config["NUM_STEPS"],
                         **metric["loss"],
+                        "length": metric["returned_episode_lengths"][-1, :].mean(),
                     }
                 )
 
