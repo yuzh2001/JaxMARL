@@ -8,6 +8,8 @@ from jaxgl.shaders import (
     make_fragment_shader_convex_dynamic_ngon_with_edges,
 )
 
+from .constants import MW_COLORS
+
 
 def make_render_pixels(static_sim_params, screen_dim):
     ppud = 12
@@ -28,9 +30,28 @@ def make_render_pixels(static_sim_params, screen_dim):
         full_screen_size, polygon_shader, (patch_size_x, patch_size_y), batched=True
     )
 
+    def calculate_color_table(n):
+        num_agents = 3
+        num_polygons = num_agents * 5 + 3
+        color_table = jax.numpy.zeros((num_polygons, 3), dtype=jax.numpy.float32)
+
+        # hull
+        for i in range(num_agents):
+            color_table = color_table.at[i * 5].set(MW_COLORS["hull"][0])
+
+        # legs
+        for i in range(num_agents):
+            color_table = color_table.at[i * 5 + 1].set(MW_COLORS["leg:L"][0])
+            color_table = color_table.at[i * 5 + 2].set(MW_COLORS["leg:L"][0])
+            color_table = color_table.at[i * 5 + 3].set(MW_COLORS["leg:R"][0])
+            color_table = color_table.at[i * 5 + 4].set(MW_COLORS["leg:R"][0])
+
+        return color_table
+
     @jax.jit
-    def render_pixels(state: SimState, color_table, step):
+    def render_pixels(state: SimState, num_agents, step):
         pixels = cleared_screen
+        color_table = calculate_color_table(num_agents)
 
         def _world_space_to_pixel_spacestep(x):
             return jnp.array(
@@ -97,6 +118,5 @@ def make_render_pixels(static_sim_params, screen_dim):
     return render_pixels
 
 
-def render_bridge(world, state, renderer, step):
-    color_table = world.get_color_table()
-    return renderer(state, color_table, step)
+def render_bridge(world, state, renderer, step, num_agents):
+    return renderer(state, num_agents, step)

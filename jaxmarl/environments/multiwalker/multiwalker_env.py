@@ -273,9 +273,9 @@ class MultiWalkerEnv(MultiAgentEnv):
 
     def render(self, state: StateWithStep, step: int):
         self.renderer = make_render_pixels(self.static_sim_params, self.screen_dim)
-        pixels = render_bridge(self.env, state.state, self.renderer, step).astype(
-            np.uint8
-        )
+        pixels = render_bridge(
+            self.env, state.state, self.renderer, step, self.num_agents
+        ).astype(np.uint8)
         return pixels
 
 
