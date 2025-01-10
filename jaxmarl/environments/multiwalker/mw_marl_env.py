@@ -300,7 +300,7 @@ def main():
     key, key_reset, key_act, key_step = jax.random.split(key, 4)
 
     # Initialise environment.
-    env = MultiWalkerEnv(n_walkers=2)
+    env = MultiWalkerEnv(n_walkers=3)
 
     # Reset the environment.
     obs, state = env.reset(key_reset)

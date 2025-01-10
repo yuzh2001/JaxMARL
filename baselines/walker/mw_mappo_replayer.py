@@ -18,7 +18,7 @@ def main(config):
     config = OmegaConf.to_container(config)
     config["NUM_ENVS"] = 1
     params = load_params(
-        "checkpoints/rebuild-mw-mappo/gallant-glade-4/model.safetensors"
+        "checkpoints/rebuild-mw-mappo/spring-valley-20/model.safetensors"
     )
 
     key = jax.random.PRNGKey(0)
@@ -34,11 +34,6 @@ def main(config):
         config["NUM_ACTORS"], config["GRU_HIDDEN_DIM"]
     )
 
-    # def batchify(x):
-    #     return jnp.stack([x[agent] for agent in env.agents])
-
-    # def unbatchify(x):
-    #     return {agent: x[i] for i, agent in enumerate(env.agents)}
     def batchify(x: dict, agent_list, num_actors):
         x = jnp.stack([x[a] for a in agent_list])
         return x.reshape((num_actors, -1))
@@ -60,7 +55,6 @@ def main(config):
             obs_batch[np.newaxis, :],
             last_done[np.newaxis, :],
         )
-        # print("ac_in", ac_in[0].shape, ac_in[1].shape)
         ac_hstate, pi = actor_network.apply(ac_params, ac_init_hstate, ac_in)
         action = pi.sample(seed=_rng)
         env_act = unbatchify(action, env.agents, config["NUM_ENVS"], env.num_agents)
@@ -72,9 +66,14 @@ def main(config):
         frames.append(env.render(state, step))
 
         if done["__all__"]:
+            print(f"Episode finished after {step} steps")
+            jax.debug.print(
+                "position-x={state}", state=state.state.polygon.position[3 * 5 + 1]
+            )
+            jax.debug.print("reward={reward}", reward=reward)
             break
 
-    imageio.mimsave("test.gif", frames, fps=20)
+    imageio.mimsave("test.gif", frames, fps=5)
 
 
 if __name__ == "__main__":

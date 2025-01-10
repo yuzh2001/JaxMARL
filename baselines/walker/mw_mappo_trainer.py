@@ -108,9 +108,6 @@ class ActorRNN(nn.Module):
         embedding = nn.relu(embedding)
 
         rnn_in = (embedding, dones)
-        # print("embedding", embedding.shape)
-        # print("dones", dones.shape)
-        # print("hidden", hidden.shape)
         hidden, embedding = ScannedRNN()(hidden, rnn_in)
 
         actor_mean = nn.Dense(
@@ -127,7 +124,15 @@ class ActorRNN(nn.Module):
         pi = distrax.MultivariateNormalDiag(actor_mean, jnp.exp(actor_logtstd))
         # pi = distrax.Categorical(logits=action_logits)
 
+        # pi greedy sample
+
         return hidden, pi
+
+    def greedy_act(self, params, hidden, x):
+        obs, dones = x
+        hidden, pi = self.apply(params, hidden, (obs, dones))
+        action = pi.mode()
+        return hidden, action
 
 
 class CriticRNN(nn.Module):
@@ -570,6 +575,7 @@ def make_train(config):
             rng = update_state[-1]
 
             def callback(metric):
+                pbar.update(1)
                 wandb.log(
                     {
                         "returns": metric["returned_episode_returns"][-1, :].mean(),
@@ -580,12 +586,29 @@ def make_train(config):
                         "length": metric["returned_episode_lengths"][-1, :].mean(),
                     }
                 )
+                # if metric["update_steps"] % save_idx == 0:
+                #     print(f"Saving model at update {metric['update_steps']}")
+
+                #     def save_params(
+                #         params: Dict, filename: Union[str, os.PathLike]
+                #     ) -> None:
+                #         flattened_dict = flatten_dict(params, sep=",")
+                #         save_file(flattened_dict, filename)
+
+                #     params = runner_state[0][0].params
+                #     save_dir = os.path.join(
+                #         config["SAVE_PATH"],
+                #         config["PROJECT"],
+                #         config["RUN_NAME"],
+                #         f"update_{metric['update_steps']}",
+                #     )
+                #     os.makedirs(save_dir, exist_ok=True)
+                #     save_params(params, f"{save_dir}/model.safetensors")
 
             metric["update_steps"] = update_steps
             jax.experimental.io_callback(callback, None, metric)
             update_steps = update_steps + 1
             runner_state = (train_states, env_state, last_obs, last_done, hstates, rng)
-            pbar.update(1)
             return (runner_state, update_steps), metric
 
         rng, _rng = jax.random.split(rng)
@@ -618,6 +641,8 @@ def main(config):
         mode=config["WANDB_MODE"],
         save_code=True,
     )
+
+    config["RUN_NAME"] = run.name
     rng = jax.random.PRNGKey(config["SEED"])
     with jax.disable_jit(False):
         train_jit = jax.jit(make_train(config))

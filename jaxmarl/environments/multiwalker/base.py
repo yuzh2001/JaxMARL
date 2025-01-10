@@ -134,6 +134,8 @@ class BipedalWalker:
                 restitution=0.0,
                 rotation=i * 0.05,
             )
+            motor_speed = 3
+            motor_power = 2
             scene, leg_hull_joint_index = add_revolute_joint_to_scene(
                 scene,
                 self.static_sim_params,
@@ -142,11 +144,11 @@ class BipedalWalker:
                 a_relative_pos=jnp.array([0.0, LEG_DOWN]),
                 b_relative_pos=jnp.array([0.0, LEG_H / 2]),
                 motor_on=True,
-                # motor_speed=1,
-                # motor_power=MOTORS_TORQUE,
                 has_joint_limits=True,
                 min_rotation=-0.8,
                 max_rotation=1.1,
+                motor_speed=motor_speed,
+                motor_power=motor_power,
             )
 
             self.leg_indexes.append(leg_index)
@@ -170,8 +172,8 @@ class BipedalWalker:
                 a_relative_pos=jnp.array([0.0, -LEG_H / 2]),
                 b_relative_pos=jnp.array([0.0, LEG_H / 2]),
                 motor_on=True,
-                # motor_speed=1,
-                # motor_power=MOTORS_TORQUE,
+                motor_speed=motor_speed,
+                motor_power=motor_power,
                 has_joint_limits=True,
                 min_rotation=-1.6,
                 max_rotation=-0.1,
@@ -190,7 +192,7 @@ class MultiWalkerWorld:
         self,
         sim_params: MW_SimParams,
         static_sim_params: MW_StaticSimParams,
-        n_walkers: int = 2,
+        n_walkers: int = 3,
     ):
         self.static_sim_params = static_sim_params
         self.sim_params = sim_params
@@ -225,7 +227,7 @@ class MultiWalkerWorld:
 
     def _generate_package(self):
         package_x = jnp.mean(self.start_x)
-        package_y = TERRAIN_HEIGHT + 3 * LEG_H
+        package_y = TERRAIN_HEIGHT + 2.5 * LEG_H
         package_scale = self._n_walkers / 1.75
         self.scene, (_, self.package_index) = add_polygon_to_scene(
             self.scene,
