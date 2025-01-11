@@ -10,6 +10,7 @@ from typing import Dict, NamedTuple, Sequence, Union
 import distrax
 import flax.linen as nn
 import hydra
+import imageio
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -19,11 +20,11 @@ from flax.training.train_state import TrainState
 from flax.traverse_util import flatten_dict
 from omegaconf import OmegaConf
 from safetensors.flax import save_file
-from tqdm import tqdm
+from tqdm import tqdm, trange
 
 import wandb
 from jaxmarl import make
-from jaxmarl.environments.multiwalker.mw_marl_env import StateWithStep
+from jaxmarl.environments.multiwalker.mw_marl_env import MultiWalkerEnv, StateWithStep
 from jaxmarl.wrappers.baselines import JaxMARLWrapper, LogWrapper
 
 
@@ -579,6 +580,8 @@ def make_train(config):
                 wandb.log(
                     {
                         "returns": metric["returned_episode_returns"][-1, :].mean(),
+                        "returned_episode_returns": metric["returned_episode_returns"],
+                        "returned_episode_lengths": metric["returned_episode_lengths"],
                         "env_step": metric["update_steps"]
                         * config["NUM_ENVS"]
                         * config["NUM_STEPS"],
@@ -586,24 +589,6 @@ def make_train(config):
                         "length": metric["returned_episode_lengths"][-1, :].mean(),
                     }
                 )
-                # if metric["update_steps"] % save_idx == 0:
-                #     print(f"Saving model at update {metric['update_steps']}")
-
-                #     def save_params(
-                #         params: Dict, filename: Union[str, os.PathLike]
-                #     ) -> None:
-                #         flattened_dict = flatten_dict(params, sep=",")
-                #         save_file(flattened_dict, filename)
-
-                #     params = runner_state[0][0].params
-                #     save_dir = os.path.join(
-                #         config["SAVE_PATH"],
-                #         config["PROJECT"],
-                #         config["RUN_NAME"],
-                #         f"update_{metric['update_steps']}",
-                #     )
-                #     os.makedirs(save_dir, exist_ok=True)
-                #     save_params(params, f"{save_dir}/model.safetensors")
 
             metric["update_steps"] = update_steps
             jax.experimental.io_callback(callback, None, metric)
@@ -659,12 +644,88 @@ def main(config):
         save_dir = os.path.join(config["SAVE_PATH"], run.project, run.name)
         os.makedirs(save_dir, exist_ok=True)
         save_params(params, f"{save_dir}/model.safetensors")
+        params = out["runner_state"][0][0][1].params
+        save_dir = os.path.join(config["SAVE_PATH"], run.project, run.name)
+        os.makedirs(save_dir, exist_ok=True)
+        save_params(params, f"{save_dir}/critic_model.safetensors")
         print(f"Parameters of first batch saved in {save_dir}/model.safetensors")
 
         # upload this to wandb as an artifact
         artifact = wandb.Artifact(f"{run.name}-checkpoint", type="checkpoint")
         artifact.add_file(f"{save_dir}/model.safetensors")
         artifact.save()
+
+    def replay():
+        key = jax.random.PRNGKey(0)
+        key, key_reset, key_act, key_step = jax.random.split(key, 4)
+
+        env: MultiWalkerEnv = MultiWalkerEnv(n_walkers=3)
+        config["NUM_ENVS"] = 1
+        config["NUM_ACTORS"] = env.num_agents * config["NUM_ENVS"]
+        config["NUM_UPDATES"] = (
+            config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"]
+        )
+        config["MINIBATCH_SIZE"] = (
+            config["NUM_ACTORS"] * config["NUM_STEPS"] // config["NUM_MINIBATCHES"]
+        )
+        config["CLIP_EPS"] = (
+            config["CLIP_EPS"] / env.num_agents
+            if config["SCALE_CLIP_EPS"]
+            else config["CLIP_EPS"]
+        )
+        # Initialise environment.
+        actor_network = ActorRNN(
+            env.action_space(env.agents[0]).shape[0], config=config
+        )
+        config["NUM_ACTORS"] = env.num_agents * config["NUM_ENVS"]
+
+        ac_params = out["runner_state"][0][0][0].params
+        ac_init_hstate = ScannedRNN.initialize_carry(
+            config["NUM_ACTORS"], config["GRU_HIDDEN_DIM"]
+        )
+
+        def batchify(x: dict, agent_list, num_actors):
+            x = jnp.stack([x[a] for a in agent_list])
+            return x.reshape((num_actors, -1))
+
+        def unbatchify(x: jnp.ndarray, agent_list, num_envs, num_actors):
+            x = x.reshape((num_actors, num_envs, -1))
+            return {a: x[i] for i, a in enumerate(agent_list)}
+
+        max_step = 500
+        # Reset the environment.
+        last_obs, state = env.reset(key_reset)
+        last_done = jnp.zeros((config["NUM_ACTORS"]), dtype=bool)
+        rng = jax.random.PRNGKey(config["SEED"])
+        frames = []
+        for step in trange(max_step):
+            rng, _rng = jax.random.split(rng)
+            obs_batch = batchify(last_obs, env.agents, config["NUM_ACTORS"])
+            ac_in = (
+                obs_batch[np.newaxis, :],
+                last_done[np.newaxis, :],
+            )
+            ac_init_hstate, pi = actor_network.apply(ac_params, ac_init_hstate, ac_in)
+            action = pi.mode()
+            env_act = unbatchify(action, env.agents, config["NUM_ENVS"], env.num_agents)
+
+            # Perform the step transition.
+            last_obs, state, reward, done, infos = env.step(key_step, state, env_act)
+            last_done = batchify(done, env.agents, config["NUM_ACTORS"]).squeeze()
+
+            frames.append(env.render(state, step))
+
+            if done["__all__"]:
+                print(f"Episode finished after {step} steps")
+                jax.debug.print(
+                    "position-x={state}", state=state.state.polygon.position[3 * 5 + 1]
+                )
+                jax.debug.print("reward={reward}", reward=reward)
+                break
+
+        imageio.mimsave("test1.gif", frames, fps=5)
+
+    replay()
 
 
 if __name__ == "__main__":

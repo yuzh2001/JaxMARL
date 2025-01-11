@@ -4,7 +4,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from omegaconf import OmegaConf
-from tqdm import trange
 
 from baselines.MAPPO.mappo_rnn_walker import ActorRNN, ScannedRNN
 from jaxmarl.environments.multiwalker.mw_marl_env import MultiWalkerEnv
@@ -16,23 +15,40 @@ from jaxmarl.wrappers.baselines import load_params
 )
 def main(config):
     config = OmegaConf.to_container(config)
-    config["NUM_ENVS"] = 1
     params = load_params(
-        "checkpoints/rebuild-mw-mappo/spring-valley-20/model.safetensors"
+        "checkpoints/rebuild-mw-mappo/confused-resonance-25/model.safetensors"
     )
 
-    key = jax.random.PRNGKey(0)
+    key = jax.random.PRNGKey(42)
     key, key_reset, key_act, key_step = jax.random.split(key, 4)
 
     # Initialise environment.
     env: MultiWalkerEnv = MultiWalkerEnv(n_walkers=3)
-    actor_network = ActorRNN(env.action_space(env.agents[0]).shape[0], config=config)
+    config["NUM_ENVS"] = 1
     config["NUM_ACTORS"] = env.num_agents * config["NUM_ENVS"]
+    config["NUM_UPDATES"] = (
+        config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"]
+    )
+    config["MINIBATCH_SIZE"] = (
+        config["NUM_ACTORS"] * config["NUM_STEPS"] // config["NUM_MINIBATCHES"]
+    )
+    config["CLIP_EPS"] = (
+        config["CLIP_EPS"] / env.num_agents
+        if config["SCALE_CLIP_EPS"]
+        else config["CLIP_EPS"]
+    )
+    actor_network = ActorRNN(env.action_space(env.agents[0]).shape[0], config=config)
 
     ac_params = params
-    ac_init_hstate = ScannedRNN.initialize_carry(
+    ac_hstate = ScannedRNN.initialize_carry(
         config["NUM_ACTORS"], config["GRU_HIDDEN_DIM"]
     )
+
+    # actor_train_state = TrainState.create(
+    #     apply_fn=actor_network.apply,
+    #     params=actor_network_params,
+    #     tx=actor_tx,
+    # )
 
     def batchify(x: dict, agent_list, num_actors):
         x = jnp.stack([x[a] for a in agent_list])
@@ -46,17 +62,20 @@ def main(config):
     # Reset the environment.
     last_obs, state = env.reset(key_reset)
     last_done = jnp.zeros((config["NUM_ACTORS"]), dtype=bool)
-    rng = jax.random.PRNGKey(0)
+    rng = jax.random.PRNGKey(43)
     frames = []
-    for step in trange(max_step):
+    for step in range(max_step):
         rng, _rng = jax.random.split(rng)
+        # jax.debug.print("last_obs={last_obs}", last_obs=last_obs["agent_1"][5])
         obs_batch = batchify(last_obs, env.agents, config["NUM_ACTORS"])
         ac_in = (
             obs_batch[np.newaxis, :],
             last_done[np.newaxis, :],
         )
-        ac_hstate, pi = actor_network.apply(ac_params, ac_init_hstate, ac_in)
-        action = pi.sample(seed=_rng)
+        ac_hstate, pi = actor_network.apply(ac_params, ac_hstate, ac_in)
+        action = pi.mode()
+        # action = pi.sample(seed=_rng)
+        jax.debug.print("action={action}", action=action)
         env_act = unbatchify(action, env.agents, config["NUM_ENVS"], env.num_agents)
 
         # Perform the step transition.
@@ -73,7 +92,7 @@ def main(config):
             jax.debug.print("reward={reward}", reward=reward)
             break
 
-    imageio.mimsave("test.gif", frames, fps=5)
+    imageio.mimsave("test.gif", frames, fps=20)
 
 
 if __name__ == "__main__":

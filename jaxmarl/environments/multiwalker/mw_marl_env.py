@@ -213,6 +213,14 @@ class MultiWalkerEnv(MultiAgentEnv):
                 ]
             )
 
+            def _get_ang_vel(pid):
+                return _extract_polygon(state, pid).angular_velocity
+
+            def get_motor_speed(jid):
+                a_index = joint_states[jid].a_index
+                b_index = joint_states[jid].b_index
+                return _get_ang_vel(b_index) - _get_ang_vel(a_index)
+
             full_obs = jnp.array(
                 [
                     hull_state.rotation,
@@ -220,16 +228,16 @@ class MultiWalkerEnv(MultiAgentEnv):
                     hull_state.velocity[0],
                     hull_state.velocity[1],
                     joint_states[0].rotation,
-                    joint_states[0].motor_speed,
+                    get_motor_speed(0),
                     joint_states[1].rotation,
-                    joint_states[1].motor_speed,
+                    get_motor_speed(1),
                     legs_on_floor[1],
                     joint_states[2].rotation,
-                    joint_states[2].motor_speed,
+                    get_motor_speed(2),
                     joint_states[3].rotation,
-                    joint_states[3].motor_speed,
+                    get_motor_speed(3),
                     legs_on_floor[3],
-                    # above are the frist 14 observations
+                    # above are the first 14 observations
                     # however, LiDAR hasn't been added yet, so jumped 10 observations
                 ]
             )

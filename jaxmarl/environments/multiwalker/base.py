@@ -237,9 +237,9 @@ class MultiWalkerWorld:
                 [(x * package_scale / SCALE, y / SCALE) for x, y in PACKAGE_POLY]
             ),
             n_vertices=len(PACKAGE_POLY),
-            density=1.0,
+            density=0.5,
             restitution=0.0,
-            friction=0.5,
+            friction=1,
         )
 
     def reset(self) -> SimState:
