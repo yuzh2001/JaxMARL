@@ -10,7 +10,8 @@
   "scripts": {
     "mw_base": "uv run jaxmarl/environments/multiwalker/base.py",
     "mw_env": "uv run jaxmarl/environments/multiwalker/multiwalker_env.py",
-    "train": "uv run baselines/walker/mw_mappo_trainer.py"
+    "train": "uv run baselines/walker/mw_mappo_trainer.py",
+    "replay": "uv run baselines/walker/mw_mappo_replayer.py"
   },
   "author": "",
   "license": "ISC"

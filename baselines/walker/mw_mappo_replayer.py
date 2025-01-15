@@ -75,7 +75,7 @@ def main(config):
         ac_hstate, pi = actor_network.apply(ac_params, ac_hstate, ac_in)
         action = pi.mode()
         # action = pi.sample(seed=_rng)
-        jax.debug.print("action={action}", action=action)
+        # jax.debug.print("action={action}", action=action)
         env_act = unbatchify(action, env.agents, config["NUM_ENVS"], env.num_agents)
 
         # Perform the step transition.

@@ -72,7 +72,7 @@ class MW_SimParams(SimParams):
     motor_joint_limit: float = 0.1  # rad
 
     # Other defaults
-    base_friction: float = 0.4
+    base_friction: float = 2.5
 
 
 class BipedalWalker:
@@ -227,8 +227,11 @@ class MultiWalkerWorld:
 
     def _generate_package(self):
         package_x = jnp.mean(self.start_x)
+        # jax.debug.print("package_x={package_x}", package_x=package_x)
         package_y = TERRAIN_HEIGHT + 2.5 * LEG_H
+        # jax.debug.print("package_y={package_y}", package_y=package_y)
         package_scale = self._n_walkers / 1.75
+        # jax.debug.print("package_scale={package_scale}", package_scale=package_scale)
         self.scene, (_, self.package_index) = add_polygon_to_scene(
             self.scene,
             self.static_sim_params,
@@ -237,7 +240,7 @@ class MultiWalkerWorld:
                 [(x * package_scale / SCALE, y / SCALE) for x, y in PACKAGE_POLY]
             ),
             n_vertices=len(PACKAGE_POLY),
-            density=0.5,
+            density=1,
             restitution=0.0,
             friction=1,
         )

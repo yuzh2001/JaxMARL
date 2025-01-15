@@ -56,7 +56,7 @@ class MultiWalkerEnv(MultiAgentEnv):
 
         # jax2d参数
         self.static_sim_params = MW_StaticSimParams(
-            num_polygons=n_walkers * 5 + 1 + 2,
+            num_polygons=n_walkers * 5 + 1 + 3,
             num_circles=2,
             num_thrusters=2,
             num_joints=n_walkers * 4,
@@ -125,7 +125,7 @@ class MultiWalkerEnv(MultiAgentEnv):
         next_state_with_step = StateWithStep(state=next_state, step=step + 1)
         observations = self.get_obs(next_state_with_step)
 
-        def _calculate_reward():
+        def _calculate_reward(state: SimState, next_state: SimState):
             """
             - forward * 1
             - package contact ground: -100[done]
@@ -139,7 +139,8 @@ class MultiWalkerEnv(MultiAgentEnv):
             forward_reward = (
                 next_state.polygon.position[self.package_index][0]
                 - state.polygon.position[self.package_index][0]
-            ) * 4.0
+            ) * 40.0
+
             overall_reward += forward_reward
 
             agents_reward = jnp.zeros(self.n_walkers)
@@ -170,7 +171,7 @@ class MultiWalkerEnv(MultiAgentEnv):
             return overall_reward, done
 
         # 计算奖励
-        rwd, done = _calculate_reward()
+        rwd, done = _calculate_reward(state, next_state)
         rewards = {agent: rwd for agent in self.agents}
         rewards["__all__"] = rwd * 3
 
