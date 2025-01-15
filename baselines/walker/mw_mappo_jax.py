@@ -146,6 +146,7 @@ def main(config):
 
     for i in trange(10):
         runner_state = _replay(1)
+        seed = seed + 1
 
         reward = runner_state.reward["__all__"]
         frames = runner_state.frames
